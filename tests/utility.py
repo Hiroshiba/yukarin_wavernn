@@ -1,0 +1,194 @@
+from collections import namedtuple
+from pathlib import Path
+from typing import Callable, Dict, Optional
+
+import chainer
+import numpy as np
+from chainer.iterators import MultiprocessIterator
+from chainer.training.updaters import StandardUpdater
+
+from yukarin_wavernn.config import ModelConfig
+from yukarin_wavernn.dataset import BaseWaveDataset
+from yukarin_wavernn.model import Model
+from yukarin_wavernn.utility.chainer_converter_utility import concat_optional
+
+
+class RandomDataset(BaseWaveDataset):
+    def __len__(self):
+        return 100
+
+    def get_example(self, i):
+        length = self.sampling_length
+        wave = np.random.rand(length) * 2 - 1
+        local = np.empty(shape=(length, 0), dtype=np.float32)
+        silence = np.zeros(shape=(length,), dtype=np.bool)
+        return self.convert_to_dict(wave, silence, local)
+
+
+class LocalRandomDataset(RandomDataset):
+    def get_example(self, i):
+        d = super().get_example(i)
+        if self.to_double:
+            d["local"] = np.stack(
+                (
+                    d["encoded_coarse"].astype(np.float32) / 256,
+                    d["encoded_fine"].astype(np.float32) / 256,
+                ),
+                axis=1,
+            )
+        else:
+            d["local"] = np.stack(
+                (
+                    d["encoded_coarse"].astype(np.float32) / 256,
+                    d["encoded_coarse"].astype(np.float32) / 256,
+                ),
+                axis=1,
+            )
+        return d
+
+
+class DownLocalRandomDataset(LocalRandomDataset):
+    def __init__(self, scale: int, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.scale = scale
+
+    def get_example(self, i):
+        d = super().get_example(i)
+        l = np.reshape(d["local"], (-1, self.scale * d["local"].shape[1]))
+        l[np.isnan(l)] = 0
+        d["local"] = l
+        return d
+
+
+class SignWaveDataset(BaseWaveDataset):
+    def __init__(
+        self,
+        sampling_rate: int,
+        sampling_length: int,
+        to_double: bool,
+        bit: int,
+        mulaw: bool,
+        frequency: float = 440,
+    ) -> None:
+        super().__init__(
+            sampling_length=sampling_length,
+            to_double=to_double,
+            bit=bit,
+            mulaw=mulaw,
+            local_padding_size=0,
+        )
+        self.sampling_rate = sampling_rate
+        self.frequency = frequency
+
+    def __len__(self):
+        return 100
+
+    def get_example(self, i):
+        rate = self.sampling_rate
+        length = self.sampling_length
+        rand = np.random.rand()
+
+        wave = np.sin((np.arange(length) * self.frequency / rate + rand) * 2 * np.pi)
+        local = np.empty(shape=(length, 0), dtype=np.float32)
+        silence = np.zeros(shape=(length,), dtype=np.bool)
+        return self.convert_to_dict(wave, silence, local)
+
+
+def _create_optimizer(model):
+    optimizer = chainer.optimizers.Adam(alpha=0.001)
+    optimizer.setup(model)
+    return optimizer
+
+
+def setup_support(
+    batch_size: int,
+    gpu: Optional[int],
+    model: Model,
+    dataset: chainer.dataset.DatasetMixin,
+):
+    optimizer = _create_optimizer(model)
+    train_iter = MultiprocessIterator(dataset, batch_size)
+
+    if gpu is not None:
+        model.to_gpu(gpu)
+
+    updater = StandardUpdater(
+        device=gpu,
+        iterator=train_iter,
+        optimizer=optimizer,
+        converter=concat_optional,
+    )
+
+    reporter = chainer.Reporter()
+    reporter.add_observer("main", model)
+
+    return updater, reporter
+
+
+def train_support(
+    iteration: int,
+    reporter: chainer.Reporter,
+    updater: chainer.training.Updater,
+    first_hook: Callable[[Dict], None] = None,
+    last_hook: Callable[[Dict], None] = None,
+):
+    observation: Dict = {}
+    for i in range(iteration):
+        with reporter.scope(observation):
+            updater.update()
+
+        if i % 100 == 0:
+            print(observation)
+
+        if i == 0:
+            if first_hook is not None:
+                first_hook(observation)
+
+    print(observation)
+    if last_hook is not None:
+        last_hook(observation)
+
+
+def get_test_config(
+    to_double,
+    bit,
+    mulaw,
+    speaker_size,
+):
+    return namedtuple("Config", ["dataset", "model"])(
+        dataset=namedtuple("DatasetConfig", ["sampling_rate", "mulaw",])(
+            sampling_rate=8000,
+            mulaw=mulaw,
+        ),
+        model=ModelConfig(
+            dual_softmax=to_double,
+            bit_size=bit,
+            hidden_size=896,
+            local_size=0,
+            conditioning_size=128,
+            embedding_size=256,
+            linear_hidden_size=512,
+            local_scale=1,
+            local_layer_num=2,
+            speaker_size=speaker_size,
+            speaker_embedding_size=speaker_size // 4,
+            weight_initializer=None,
+        ),
+    )
+
+
+def get_test_model_path(
+    to_double,
+    bit,
+    mulaw,
+    speaker_size,
+    iteration,
+):
+    return Path(
+        f"tests/data/test_training_wavernn"
+        f"-to_double={to_double}"
+        f"-bit={bit}"
+        f"-mulaw={mulaw}"
+        f"-speaker_size={speaker_size}"
+        f"-iteration={iteration}.npz"
+    )
