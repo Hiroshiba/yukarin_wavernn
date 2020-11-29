@@ -1,61 +1,54 @@
-from collections import namedtuple
 from pathlib import Path
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict
 
-import chainer
-import numpy as np
-from chainer.iterators import MultiprocessIterator
-from chainer.training.updaters import StandardUpdater
-
-from yukarin_wavernn.config import ModelConfig
-from yukarin_wavernn.dataset import BaseWaveDataset
+import numpy
+from pytorch_trainer import Reporter
+from pytorch_trainer.iterators import MultiprocessIterator
+from pytorch_trainer.training.updaters import StandardUpdater
+from torch import device, optim
+from torch.utils.data.dataset import Dataset
+from yukarin_wavernn.dataset import BaseWaveDataset, TensorWrapperDataset
 from yukarin_wavernn.model import Model
-from yukarin_wavernn.utility.chainer_converter_utility import concat_optional
+
+
+def get_data_directory() -> Path:
+    return Path(__file__).parent.relative_to(Path.cwd()) / "data"
 
 
 class RandomDataset(BaseWaveDataset):
     def __len__(self):
         return 100
 
-    def get_example(self, i):
+    def __getitem__(self, i):
         length = self.sampling_length
-        wave = np.random.rand(length) * 2 - 1
-        local = np.empty(shape=(length, 0), dtype=np.float32)
-        silence = np.zeros(shape=(length,), dtype=np.bool)
+        wave = numpy.random.rand(length) * 2 - 1
+        local = numpy.empty(shape=(length, 0), dtype=numpy.float32)
+        silence = numpy.zeros(shape=(length,), dtype=numpy.bool)
         return self.convert_to_dict(wave, silence, local)
 
 
 class LocalRandomDataset(RandomDataset):
-    def get_example(self, i):
-        d = super().get_example(i)
-        if self.to_double:
-            d["local"] = np.stack(
-                (
-                    d["encoded_coarse"].astype(np.float32) / 256,
-                    d["encoded_fine"].astype(np.float32) / 256,
-                ),
-                axis=1,
-            )
-        else:
-            d["local"] = np.stack(
-                (
-                    d["encoded_coarse"].astype(np.float32) / 256,
-                    d["encoded_coarse"].astype(np.float32) / 256,
-                ),
-                axis=1,
-            )
+    def __getitem__(self, i):
+        d = super().__getitem__(i)
+        d["local"] = numpy.stack(
+            (
+                d["encoded_coarse"].astype(numpy.float32) / 256,
+                d["encoded_coarse"].astype(numpy.float32) / 256,
+            ),
+            axis=1,
+        )
         return d
 
 
 class DownLocalRandomDataset(LocalRandomDataset):
-    def __init__(self, scale: int, **kwargs) -> None:
+    def __init__(self, scale: int, **kwargs):
         super().__init__(**kwargs)
         self.scale = scale
 
-    def get_example(self, i):
-        d = super().get_example(i)
-        l = np.reshape(d["local"], (-1, self.scale * d["local"].shape[1]))
-        l[np.isnan(l)] = 0
+    def __getitem__(self, i):
+        d = super().__getitem__(i)
+        l = numpy.reshape(d["local"], (-1, self.scale * d["local"].shape[1]))
+        l[numpy.isnan(l)] = 0
         d["local"] = l
         return d
 
@@ -65,14 +58,12 @@ class SignWaveDataset(BaseWaveDataset):
         self,
         sampling_rate: int,
         sampling_length: int,
-        to_double: bool,
         bit: int,
         mulaw: bool,
         frequency: float = 440,
-    ) -> None:
+    ):
         super().__init__(
             sampling_length=sampling_length,
-            to_double=to_double,
             bit=bit,
             mulaw=mulaw,
             local_padding_size=0,
@@ -83,43 +74,45 @@ class SignWaveDataset(BaseWaveDataset):
     def __len__(self):
         return 100
 
-    def get_example(self, i):
+    def __getitem__(self, i):
         rate = self.sampling_rate
         length = self.sampling_length
-        rand = np.random.rand()
+        rand = numpy.random.rand()
 
-        wave = np.sin((np.arange(length) * self.frequency / rate + rand) * 2 * np.pi)
-        local = np.empty(shape=(length, 0), dtype=np.float32)
-        silence = np.zeros(shape=(length,), dtype=np.bool)
-        return self.convert_to_dict(wave, silence, local)
+        wave = numpy.sin(
+            (numpy.arange(length) * self.frequency / rate + rand) * 2 * numpy.pi
+        )
+        local = numpy.empty(shape=(length, 0), dtype=numpy.float32)
+        silence = numpy.zeros(shape=(length,), dtype=numpy.bool)
+
+        d = self.convert_to_dict(wave, silence, local)
+        return d
 
 
 def _create_optimizer(model):
-    optimizer = chainer.optimizers.Adam(alpha=0.001)
-    optimizer.setup(model)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
     return optimizer
 
 
 def setup_support(
     batch_size: int,
-    gpu: Optional[int],
+    device: device,
     model: Model,
-    dataset: chainer.dataset.DatasetMixin,
+    dataset: Dataset,
 ):
-    optimizer = _create_optimizer(model)
-    train_iter = MultiprocessIterator(dataset, batch_size)
+    model.to(device)
 
-    if gpu is not None:
-        model.to_gpu(gpu)
+    optimizer = _create_optimizer(model)
+    train_iter = MultiprocessIterator(TensorWrapperDataset(dataset), batch_size)
 
     updater = StandardUpdater(
-        device=gpu,
         iterator=train_iter,
         optimizer=optimizer,
-        converter=concat_optional,
+        model=model,
+        device=device,
     )
 
-    reporter = chainer.Reporter()
+    reporter = Reporter()
     reporter.add_observer("main", model)
 
     return updater, reporter
@@ -127,8 +120,8 @@ def setup_support(
 
 def train_support(
     iteration: int,
-    reporter: chainer.Reporter,
-    updater: chainer.training.Updater,
+    reporter: Reporter,
+    updater: StandardUpdater,
     first_hook: Callable[[Dict], None] = None,
     last_hook: Callable[[Dict], None] = None,
 ):
@@ -150,18 +143,23 @@ def train_support(
 
 
 def get_test_config(
-    to_double,
     bit,
     mulaw,
     speaker_size,
 ):
-    return namedtuple("Config", ["dataset", "model"])(
-        dataset=namedtuple("DatasetConfig", ["sampling_rate", "mulaw",])(
+    dataset_config = type(
+        "DatasetConfig",
+        (object,),
+        dict(
             sampling_rate=8000,
             mulaw=mulaw,
+            bit_size=bit,
         ),
-        model=ModelConfig(
-            dual_softmax=to_double,
+    )
+    network_config = type(
+        "NetworkConfig",
+        (object,),
+        dict(
             bit_size=bit,
             hidden_size=896,
             local_size=0,
@@ -172,13 +170,20 @@ def get_test_config(
             local_layer_num=2,
             speaker_size=speaker_size,
             speaker_embedding_size=speaker_size // 4,
-            weight_initializer=None,
         ),
     )
+    config = type(
+        "Config",
+        (object,),
+        dict(
+            dataset=dataset_config,
+            network=network_config,
+        ),
+    )
+    return config
 
 
 def get_test_model_path(
-    to_double,
     bit,
     mulaw,
     speaker_size,
@@ -186,9 +191,8 @@ def get_test_model_path(
 ):
     return Path(
         f"tests/data/test_training_wavernn"
-        f"-to_double={to_double}"
         f"-bit={bit}"
         f"-mulaw={mulaw}"
         f"-speaker_size={speaker_size}"
-        f"-iteration={iteration}.npz"
+        f"-iteration={iteration}.pth"
     )

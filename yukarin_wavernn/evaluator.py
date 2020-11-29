@@ -1,20 +1,20 @@
 from pathlib import Path
 from typing import Optional
 
-import chainer
-import numpy as np
+import numpy
 from acoustic_feature_extractor.data.spectrogram import to_melcepstrum
 from acoustic_feature_extractor.data.wave import Wave
-from chainer import Chain
+from pytorch_trainer import report
+from torch import Tensor, nn
 
 from yukarin_wavernn.generator import Generator, SamplingPolicy
 
-_logdb_const = 10.0 / np.log(10.0) * np.sqrt(2.0)
+_logdb_const = 10.0 / numpy.log(10.0) * numpy.sqrt(2.0)
 
 
-def _mcd(x: np.ndarray, y: np.ndarray) -> float:
+def _mcd(x: numpy.ndarray, y: numpy.ndarray) -> float:
     z = x - y
-    r = np.sqrt((z * z).sum(axis=1)).mean()
+    r = numpy.sqrt((z * z).sum(axis=1)).mean()
     return _logdb_const * r
 
 
@@ -53,14 +53,14 @@ def calc_mcd(
     return _mcd(mc1, mc2)
 
 
-class GenerateEvaluator(Chain):
+class GenerateEvaluator(nn.Module):
     def __init__(
         self,
         generator: Generator,
         time_length: float,
         local_padding_time_length: float,
         sampling_policy: SamplingPolicy = SamplingPolicy.random,
-    ) -> None:
+    ):
         super().__init__()
         self.generator = generator
         self.time_length = time_length
@@ -69,12 +69,11 @@ class GenerateEvaluator(Chain):
 
     def __call__(
         self,
-        wave: np.ndarray,
-        local: Optional[np.ndarray],
-        speaker_num: Optional[np.ndarray] = None,
+        wave: Tensor,
+        local: Optional[Tensor],
+        speaker_num: Optional[Tensor] = None,
     ):
         batchsize = len(wave)
-        wave = chainer.cuda.to_cpu(wave)
 
         wave_output = self.generator.generate(
             time_length=self.time_length + self.local_padding_time_length * 2,
@@ -85,7 +84,7 @@ class GenerateEvaluator(Chain):
         )
 
         mcd_list = []
-        for wi, wo in zip(wave, wave_output):
+        for wi, wo in zip(wave.cpu().numpy(), wave_output):
             wi = Wave(wave=wi, sampling_rate=wo.sampling_rate)
 
             if self.local_padding_time_length > 0:
@@ -95,7 +94,7 @@ class GenerateEvaluator(Chain):
             mcd = calc_mcd(wave1=wi, wave2=wo)
             mcd_list.append(mcd)
 
-        scores = {"mcd": (self.generator.xp.asarray(mcd_list).mean(), batchsize)}
+        scores = {"mcd": (numpy.mean(mcd_list), batchsize)}
 
-        chainer.report(scores, self)
+        report(scores, self)
         return scores

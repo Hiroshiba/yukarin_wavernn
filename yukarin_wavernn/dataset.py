@@ -1,30 +1,28 @@
 import glob
 import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, NamedTuple, Union
+from typing import Dict, List, Union
 
-import numpy as np
+import numpy
 from acoustic_feature_extractor.data.sampling_data import SamplingData
 from acoustic_feature_extractor.data.wave import Wave
-from chainer.dataset import DatasetMixin
-from chainer.datasets import ConcatenatedDataset
+from torch.utils.data import ConcatDataset, Dataset
+from torch.utils.data._utils.collate import default_convert
 
 from yukarin_wavernn.config import DatasetConfig
-from yukarin_wavernn.data import (
-    decode_single,
-    encode_16bit,
-    encode_mulaw,
-    encode_single,
-)
+from yukarin_wavernn.data import encode_mulaw, encode_single
 
 
-class Input(NamedTuple):
+@dataclass
+class Input:
     wave: Wave
     silence: SamplingData
     local: SamplingData
 
 
-class LazyInput(NamedTuple):
+@dataclass
+class LazyInput:
     path_wave: Path
     path_silence: Path
     path_local: Path
@@ -37,17 +35,15 @@ class LazyInput(NamedTuple):
         )
 
 
-class BaseWaveDataset(DatasetMixin):
+class BaseWaveDataset(Dataset):
     def __init__(
         self,
         sampling_length: int,
-        to_double: bool,
         bit: int,
         mulaw: bool,
         local_padding_size: int,
-    ) -> None:
+    ):
         self.sampling_length = sampling_length
-        self.to_double = to_double
         self.bit = bit
         self.mulaw = mulaw
         self.local_padding_size = local_padding_size
@@ -85,10 +81,10 @@ class BaseWaveDataset(DatasetMixin):
         l_sl = sl // l_scale
 
         for _ in range(10000):
-            l_offset = np.random.randint(l_length - l_sl)
+            l_offset = numpy.random.randint(l_length - l_sl)
             offset = l_offset * l_scale
 
-            silence = np.squeeze(silence_data.resample(sr, index=offset, length=sl))
+            silence = numpy.squeeze(silence_data.resample(sr, index=offset, length=sl))
             if not silence.all():
                 break
         else:
@@ -101,7 +97,9 @@ class BaseWaveDataset(DatasetMixin):
         if l_start < 0 or l_end > l_length:
             shape = list(local_data.array.shape)
             shape[0] = l_sl + l_pad * 2
-            local = np.ones(shape=shape, dtype=local_data.array.dtype) * padding_value
+            local = (
+                numpy.ones(shape=shape, dtype=local_data.array.dtype) * padding_value
+            )
             if l_start < 0:
                 p_start = -l_start
                 l_start = 0
@@ -119,31 +117,23 @@ class BaseWaveDataset(DatasetMixin):
         return wave, silence, local
 
     @staticmethod
-    def add_noise(wave: np.ndarray, gaussian_noise_sigma: float):
+    def add_noise(wave: numpy.ndarray, gaussian_noise_sigma: float):
         if gaussian_noise_sigma > 0:
-            wave += np.random.normal(0, gaussian_noise_sigma)
+            wave += numpy.random.normal(0, gaussian_noise_sigma)
             wave[wave > 1.0] = 1.0
             wave[wave < -1.0] = -1.0
         return wave
 
-    def convert_to_dict(self, wave: np.ndarray, silence: np.ndarray, local: np.ndarray):
+    def convert_to_dict(
+        self, wave: numpy.ndarray, silence: numpy.ndarray, local: numpy.ndarray
+    ):
         if self.mulaw:
             wave = encode_mulaw(wave, mu=2 ** self.bit)
-        if self.to_double:
-            assert self.bit == 16
-            encoded_coarse, encoded_fine = encode_16bit(wave)
-            coarse = decode_single(encoded_coarse).astype(np.float32)
-            fine = decode_single(encoded_fine).astype(np.float32)[:-1]
-        else:
-            encoded_coarse = encode_single(wave, bit=self.bit)
-            encoded_fine = None
-            coarse = wave.ravel().astype(np.float32)
-            fine = None
+        encoded_coarse = encode_single(wave, bit=self.bit)
+        coarse = wave.ravel().astype(numpy.float32)
         return dict(
             coarse=coarse,
-            fine=fine,
             encoded_coarse=encoded_coarse,
-            encoded_fine=encoded_fine,
             local=local,
             silence=silence[1:],
         )
@@ -172,15 +162,13 @@ class WavesDataset(BaseWaveDataset):
         self,
         inputs: List[Union[Input, LazyInput]],
         sampling_length: int,
-        to_double: bool,
         bit: int,
         mulaw: bool,
         local_padding_size: int,
         gaussian_noise_sigma: float,
-    ) -> None:
+    ):
         super().__init__(
             sampling_length=sampling_length,
-            to_double=to_double,
             bit=bit,
             mulaw=mulaw,
             local_padding_size=local_padding_size,
@@ -191,7 +179,7 @@ class WavesDataset(BaseWaveDataset):
     def __len__(self):
         return len(self.inputs)
 
-    def get_example(self, i):
+    def __getitem__(self, i):
         input = self.inputs[i]
         if isinstance(input, LazyInput):
             input = input.generate()
@@ -204,13 +192,13 @@ class WavesDataset(BaseWaveDataset):
         )
 
 
-class NonEncodeWavesDataset(DatasetMixin):
+class NonEncodeWavesDataset(Dataset):
     def __init__(
         self,
         inputs: List[Union[Input, LazyInput]],
         time_length: float,
         local_padding_time_length: float,
-    ) -> None:
+    ):
         self.inputs = inputs
         self.time_length = time_length
         self.local_padding_time_length = local_padding_time_length
@@ -218,7 +206,7 @@ class NonEncodeWavesDataset(DatasetMixin):
     def __len__(self):
         return len(self.inputs)
 
-    def get_example(self, i):
+    def __getitem__(self, i):
         input = self.inputs[i]
         if isinstance(input, LazyInput):
             input = input.generate()
@@ -241,8 +229,8 @@ class NonEncodeWavesDataset(DatasetMixin):
         )
 
 
-class SpeakerWavesDataset(DatasetMixin):
-    def __init__(self, wave_dataset: DatasetMixin, speaker_nums: List[int]):
+class SpeakerWavesDataset(Dataset):
+    def __init__(self, wave_dataset: Dataset, speaker_nums: List[int]):
         assert len(wave_dataset) == len(speaker_nums)
         self.wave_dataset = wave_dataset
         self.speaker_nums = speaker_nums
@@ -250,16 +238,24 @@ class SpeakerWavesDataset(DatasetMixin):
     def __len__(self):
         return len(self.wave_dataset)
 
-    def get_example(self, i):
-        d = self.wave_dataset.get_example(i)
-        d["speaker_num"] = np.array(self.speaker_nums[i], dtype=np.int32)
+    def __getitem__(self, i):
+        d = self.wave_dataset[i]
+        d["speaker_num"] = numpy.array(self.speaker_nums[i], dtype=numpy.int64)
         return d
 
 
-def create(config: DatasetConfig):
-    if not config.only_coarse:
-        assert config.bit_size == 16
+class TensorWrapperDataset(Dataset):
+    def __init__(self, dataset: Dataset):
+        self.dataset = dataset
 
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, i):
+        return default_convert(self.dataset[i])
+
+
+def create(config: DatasetConfig):
     wave_paths = {Path(p).stem: Path(p) for p in glob.glob(str(config.input_wave_glob))}
     fn_list = sorted(wave_paths.keys())
     assert len(fn_list) > 0
@@ -289,7 +285,7 @@ def create(config: DatasetConfig):
     else:
         speaker_nums = None
 
-    np.random.RandomState(config.seed).shuffle(fn_list)
+    numpy.random.RandomState(config.seed).shuffle(fn_list)
 
     num_test = config.num_test
     num_train = (
@@ -298,7 +294,6 @@ def create(config: DatasetConfig):
 
     trains = fn_list[num_test:][:num_train]
     tests = fn_list[:num_test]
-    train_tests = trains[:num_test]
 
     def Dataset(fns, for_evaluate=False):
         inputs = [
@@ -314,7 +309,6 @@ def create(config: DatasetConfig):
             dataset = WavesDataset(
                 inputs=inputs,
                 sampling_length=config.sampling_length,
-                to_double=not config.only_coarse,
                 bit=config.bit_size,
                 mulaw=config.mulaw,
                 local_padding_size=config.local_padding_size,
@@ -333,16 +327,15 @@ def create(config: DatasetConfig):
                 speaker_nums=[speaker_nums[fn] for fn in fns],
             )
 
+        dataset = TensorWrapperDataset(dataset)
+
         if for_evaluate:
-            dataset = ConcatenatedDataset(*([dataset] * config.num_times_evaluate))
+            dataset = ConcatDataset([dataset] * config.num_times_evaluate)
 
         return dataset
 
     return {
         "train": Dataset(trains),
         "test": Dataset(tests),
-        "train_test": Dataset(train_tests),
-        "test_eval": Dataset(tests, for_evaluate=True)
-        if config.num_times_evaluate is not None
-        else None,
+        "eval": Dataset(tests, for_evaluate=True),
     }

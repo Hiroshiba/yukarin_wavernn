@@ -1,128 +1,100 @@
-from copy import copy, deepcopy
+import warnings
+from copy import copy
 from pathlib import Path
 from typing import Any, Dict
 
-import chainer
-from chainer import cuda, optimizer_hooks, optimizers, training
-from chainer.iterators import MultiprocessIterator
-from chainer.training import ParallelUpdater, extensions
-from chainer.training.updaters import StandardUpdater
+import torch
+import yaml
+from pytorch_trainer.iterators import MultiprocessIterator
+from pytorch_trainer.training import Trainer, extensions, triggers
+from pytorch_trainer.training.updaters import StandardUpdater
 from tensorboardX import SummaryWriter
+from torch import optim
+from torch.optim.optimizer import Optimizer
 
-from utility.extension_utility import ExponentialMovingAverage, TensorBoardReport
 from yukarin_wavernn.config import Config, assert_config
 from yukarin_wavernn.dataset import create as create_dataset
 from yukarin_wavernn.evaluator import GenerateEvaluator
 from yukarin_wavernn.generator import Generator
 from yukarin_wavernn.model import Model, create_predictor
-from yukarin_wavernn.utility.chainer_converter_utility import concat_optional
+from yukarin_wavernn.utility.pytorch_utility import init_weights
+from yukarin_wavernn.utility.trainer_extension import TensorboardReport, WandbReport
 
 
 def create_trainer(
-    config: Config,
+    config_dict: Dict[str, Any],
     output: Path,
 ):
+    # config
+    config = Config.from_dict(config_dict)
+    config.add_git_info()
     assert_config(config)
-    if output.exists():
-        raise Exception(f"output directory {output} already exists.")
+
+    output.mkdir(exist_ok=True, parents=True)
+    with (output / "config.yaml").open(mode="w") as f:
+        yaml.safe_dump(config.to_dict(), f)
 
     # model
-    predictor = create_predictor(config.model)
-    if config.train.trained_model is not None:
-        chainer.serializers.load_npz(
-            config.train.trained_model["predictor_path"], predictor
-        )
+    predictor = create_predictor(config.network)
     model = Model(
         loss_config=config.loss,
         predictor=predictor,
         local_padding_size=config.dataset.local_padding_size,
     )
+    if config.train.weight_initializer is not None:
+        init_weights(model, name=config.train.weight_initializer)
 
-    model.to_gpu(config.train.gpu[0])
-    cuda.get_device_from_id(config.train.gpu[0]).use()
+    device = torch.device("cuda")
+    model.to(device)
 
     # dataset
-    dataset = create_dataset(config.dataset)
-    batchsize_devided = config.train.batchsize // len(config.train.gpu)
-    train_iter = MultiprocessIterator(dataset["train"], config.train.batchsize)
-    test_iter = MultiprocessIterator(
-        dataset["test"], batchsize_devided, repeat=False, shuffle=True
-    )
-    train_test_iter = MultiprocessIterator(
-        dataset["train_test"], batchsize_devided, repeat=False, shuffle=True
-    )
-
-    if dataset["test_eval"] is not None:
-        test_eval_iter = MultiprocessIterator(
-            dataset["test_eval"], batchsize_devided, repeat=False, shuffle=True
+    def _create_iterator(dataset, for_train: bool):
+        return MultiprocessIterator(
+            dataset,
+            config.train.batchsize,
+            repeat=for_train,
+            shuffle=for_train,
+            n_processes=config.train.num_processes,
+            dataset_timeout=60 * 15,
         )
-    else:
-        test_eval_iter = None
+
+    datasets = create_dataset(config.dataset)
+    train_iter = _create_iterator(datasets["train"], for_train=True)
+    test_iter = _create_iterator(datasets["test"], for_train=False)
+    eval_iter = _create_iterator(datasets["eval"], for_train=False)
+
+    warnings.simplefilter("error", MultiprocessIterator.TimeoutWarning)
 
     # optimizer
-    def create_optimizer(model):
-        cp: Dict[str, Any] = copy(config.train.optimizer)
-        n = cp.pop("name").lower()
+    cp: Dict[str, Any] = copy(config.train.optimizer)
+    n = cp.pop("name").lower()
 
-        if n == "adam":
-            optimizer = optimizers.Adam(**cp)
-        elif n == "sgd":
-            optimizer = optimizers.SGD(**cp)
-        else:
-            raise ValueError(n)
-
-        optimizer.setup(model)
-
-        if config.train.optimizer_gradient_clipping is not None:
-            optimizer.add_hook(
-                optimizer_hooks.GradientClipping(
-                    config.train.optimizer_gradient_clipping
-                )
-            )
-
-        return optimizer
-
-    optimizer = create_optimizer(model)
-    if config.train.trained_model is not None:
-        chainer.serializers.load_npz(
-            config.train.trained_model["optimizer_path"], optimizer
-        )
+    optimizer: Optimizer
+    if n == "adam":
+        optimizer = optim.Adam(model.parameters(), **cp)
+    elif n == "sgd":
+        optimizer = optim.SGD(model.parameters(), **cp)
+    else:
+        raise ValueError(n)
 
     # updater
-    if len(config.train.gpu) <= 1:
-        updater = StandardUpdater(
-            iterator=train_iter,
-            optimizer=optimizer,
-            converter=concat_optional,
-            device=config.train.gpu[0],
-        )
-    else:
-        updater = ParallelUpdater(
-            iterator=train_iter,
-            optimizer=optimizer,
-            converter=concat_optional,
-            devices={
-                "main" if i == 0 else f"gpu{gpu}": gpu
-                for i, gpu in enumerate(config.train.gpu)
-            },
-        )
-    if config.train.trained_model is not None:
-        updater.iteration = optimizer.t
+    updater = StandardUpdater(
+        iterator=train_iter,
+        optimizer=optimizer,
+        model=model,
+        device=device,
+    )
 
     # trainer
-    output.mkdir()
-    config.save_as_json((output / "config.json").absolute())
-
     trigger_log = (config.train.log_iteration, "iteration")
-    trigger_snapshot = (config.train.snapshot_iteration, "iteration")
+    trigger_eval = (config.train.eval_iteration, "iteration")
     trigger_stop = (
         (config.train.stop_iteration, "iteration")
         if config.train.stop_iteration is not None
         else None
     )
 
-    trainer = training.Trainer(updater, stop_trigger=trigger_stop, out=output)
-    tb_writer = SummaryWriter(Path(output))
+    trainer = Trainer(updater, stop_trigger=trigger_stop, out=output)
 
     shift_ext = None
     if config.train.linear_shift is not None:
@@ -130,55 +102,33 @@ def create_trainer(
     if config.train.step_shift is not None:
         shift_ext = extensions.StepShift(**config.train.step_shift)
     if shift_ext is not None:
-        if config.train.trained_model is not None:
-            shift_ext._t = optimizer.t
         trainer.extend(shift_ext)
 
-    if config.train.ema_decay is not None:
-        train_predictor = predictor
-        predictor = deepcopy(predictor)
-        ext = ExponentialMovingAverage(
-            target=train_predictor, ema_target=predictor, decay=config.train.ema_decay
-        )
-        trainer.extend(ext, trigger=(1, "iteration"))
-
-    ext = extensions.Evaluator(
-        test_iter, model, concat_optional, device=config.train.gpu[0]
-    )
+    ext = extensions.Evaluator(test_iter, model, device=device)
     trainer.extend(ext, name="test", trigger=trigger_log)
-    ext = extensions.Evaluator(
-        train_test_iter, model, concat_optional, device=config.train.gpu[0]
-    )
-    trainer.extend(ext, name="train", trigger=trigger_log)
 
-    if test_eval_iter is not None:
-        generator = Generator(
-            config=config,
-            model=predictor,
-            max_batch_size=config.train.batchsize,
-            use_cpp_inference=False,
-        )
-        generate_evaluator = GenerateEvaluator(
-            generator=generator,
-            time_length=config.dataset.time_length_evaluate,
-            local_padding_time_length=config.dataset.local_padding_time_length_evaluate,
-        )
-        ext = extensions.Evaluator(
-            test_eval_iter,
-            generate_evaluator,
-            concat_optional,
-            device=config.train.gpu[0],
-        )
-        trainer.extend(ext, name="eval", trigger=trigger_snapshot)
+    generator = Generator(
+        config=config,
+        predictor=predictor,
+        use_gpu=True,
+    )
+    generate_evaluator = GenerateEvaluator(
+        generator=generator,
+        time_length=config.dataset.time_length_evaluate,
+        local_padding_time_length=config.dataset.local_padding_time_length_evaluate,
+    )
+    ext = extensions.Evaluator(eval_iter, generate_evaluator, device=device)
+    trainer.extend(ext, name="eval", trigger=trigger_eval)
 
     ext = extensions.snapshot_object(
-        predictor, filename="main_{.updater.iteration}.npz"
+        predictor,
+        filename="predictor_{.updater.iteration}.pth",
+        n_retains=1,
     )
-    trainer.extend(ext, trigger=trigger_snapshot)
-    # ext = extensions.snapshot_object(
-    #     optimizer, filename="optimizer_{.updater.iteration}.npz"
-    # )
-    # trainer.extend(ext, trigger=trigger_snapshot)
+    trainer.extend(
+        ext,
+        trigger=triggers.MinValueTrigger("eval/main/mcd", trigger=trigger_eval),
+    )
 
     trainer.extend(extensions.FailOnNonNumber(), trigger=trigger_log)
     trainer.extend(extensions.observe_lr(), trigger=trigger_log)
@@ -187,11 +137,30 @@ def create_trainer(
         extensions.PrintReport(["iteration", "main/loss", "test/main/loss"]),
         trigger=trigger_log,
     )
-    trainer.extend(TensorBoardReport(writer=tb_writer), trigger=trigger_log)
+    trainer.extend(
+        TensorboardReport(writer=SummaryWriter(Path(output))), trigger=trigger_log
+    )
 
-    trainer.extend(extensions.dump_graph(root_name="main/loss"))
+    if config.project.category is not None:
+        ext = WandbReport(
+            config_dict=config.to_dict(),
+            project_category=config.project.category,
+            project_name=config.project.name,
+            output_dir=output.joinpath("wandb"),
+        )
+        trainer.extend(ext, trigger=trigger_log)
+
+    (output / "struct.txt").write_text(repr(model))
 
     if trigger_stop is not None:
         trainer.extend(extensions.ProgressBar(trigger_stop))
+
+    ext = extensions.snapshot_object(
+        trainer,
+        filename="trainer_{.updater.iteration}.pth",
+        n_retains=1,
+        autoload=True,
+    )
+    trainer.extend(ext, trigger=trigger_eval)
 
     return trainer

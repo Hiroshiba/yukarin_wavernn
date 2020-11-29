@@ -2,13 +2,10 @@ import unittest
 from pathlib import Path
 
 from parameterized import parameterized
-
-from tests.utility import get_test_model_path, get_test_config
 from yukarin_wavernn.generator import Generator, SamplingPolicy
 
-gpu = 0
+from tests.utility import get_test_config, get_test_model_path
 
-to_double = False
 bit = 10
 mulaw = True
 iteration = 3000
@@ -24,26 +21,20 @@ class TestGenerator(unittest.TestCase):
     )
     def test_generator(self, speaker_size, num_generate):
         config = get_test_config(
-            to_double=to_double,
             bit=bit,
             mulaw=mulaw,
             speaker_size=speaker_size,
         )
 
-        model = Generator.load_model(
-            model_config=config.model,
-            model_path=get_test_model_path(
-                to_double=to_double,
+        generator = Generator(
+            config=config,
+            predictor=get_test_model_path(
                 bit=bit,
                 mulaw=mulaw,
                 speaker_size=speaker_size,
                 iteration=iteration,
             ),
-            gpu=gpu,
-        )
-        generator = Generator(
-            config=config,
-            model=model,
+            use_gpu=True,
         )
 
         for sampling_policy in SamplingPolicy.__members__.values():
@@ -52,9 +43,9 @@ class TestGenerator(unittest.TestCase):
                     time_length=0.1,
                     sampling_policy=sampling_policy,
                     num_generate=num_generate,
-                    speaker_nums=list(range(num_generate))
-                    if speaker_size > 0
-                    else None,
+                    speaker_nums=(
+                        list(range(num_generate)) if speaker_size > 0 else None
+                    ),
                 )
                 for num, wave in enumerate(waves):
                     wave.save(
@@ -62,7 +53,6 @@ class TestGenerator(unittest.TestCase):
                             "/tmp/"
                             f"test_generator_audio"
                             f"-sampling_policy={sampling_policy}"
-                            f"-to_double={to_double}"
                             f"-bit={bit}"
                             f"-mulaw={mulaw}"
                             f"-speaker_size={speaker_size}"

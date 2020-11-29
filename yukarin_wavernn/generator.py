@@ -1,18 +1,16 @@
 from enum import Enum
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence, Union
 
-import chainer
-import cupy as cp
-import numpy as np
+import numpy
+import torch
 from acoustic_feature_extractor.data.wave import Wave
-from chainer import cuda
+from torch import Tensor
 from tqdm import tqdm
 
-from yukarin_wavernn.config import Config, ModelConfig
+from yukarin_wavernn.config import Config
 from yukarin_wavernn.data import decode_mulaw, decode_single, encode_single
 from yukarin_wavernn.model import create_predictor
-from yukarin_wavernn.network.fast_forward import fast_generate, get_fast_forward_params
 from yukarin_wavernn.network.wave_rnn import WaveRNN
 
 
@@ -27,113 +25,57 @@ class MorphingPolicy(str, Enum):
     sphere = "sphere"
 
 
-def to_numpy(a):
-    if isinstance(a, chainer.Variable):
-        a = a.data
-    if isinstance(a, cp.ndarray):
-        a = cp.asnumpy(a)
-    return np.ascontiguousarray(a)
+def to_tensor(array: Union[Tensor, numpy.ndarray, Any]):
+    if not isinstance(array, (Tensor, numpy.ndarray)):
+        array = numpy.asarray(array)
+
+    if isinstance(array, numpy.ndarray):
+        return torch.from_numpy(array)
+    else:
+        return array
 
 
 class Generator(object):
     def __init__(
         self,
         config: Config,
-        model: WaveRNN,
-        max_batch_size: int = 10,
-        use_cpp_inference: bool = True,
-    ) -> None:
+        predictor: Union[WaveRNN, Path],
+        use_gpu: bool,
+    ):
         self.config = config
-        self.model = model
-        self.max_batch_size = max_batch_size
-        self.use_cpp_inference = use_cpp_inference
 
         self.sampling_rate = config.dataset.sampling_rate
         self.mulaw = config.dataset.mulaw
+        self.bit_size = config.dataset.bit_size
+        self.device = torch.device("cuda") if use_gpu else torch.device("cpu")
 
-        assert not self.dual_softmax
-
-        # setup cpp inference
-        if use_cpp_inference:
-            import yukarin_wavernn_cpp
-
-            params = get_fast_forward_params(self.model)
-            local_size = (
-                config.model.conditioning_size * 2
-                if config.model.conditioning_size is not None
-                else 0
-            )
-            yukarin_wavernn_cpp.initialize(
-                graph_length=1000,
-                max_batch_size=max_batch_size,
-                local_size=local_size,
-                hidden_size=config.model.hidden_size,
-                embedding_size=config.model.embedding_size,
-                linear_hidden_size=config.model.linear_hidden_size,
-                output_size=2 ** config.model.bit_size,
-                x_embedder_W=to_numpy(params["x_embedder_W"]),
-                gru_xw=to_numpy(params["gru_xw"]),
-                gru_xb=to_numpy(params["gru_xb"]),
-                gru_hw=to_numpy(params["gru_hw"]),
-                gru_hb=to_numpy(params["gru_hb"]),
-                O1_W=to_numpy(params["O1_W"]),
-                O1_b=to_numpy(params["O1_b"]),
-                O2_W=to_numpy(params["O2_W"]),
-                O2_b=to_numpy(params["O2_b"]),
-            )
-
-    @staticmethod
-    def load_model(
-        model_config: ModelConfig,
-        model_path: Path,
-        gpu: int = None,
-    ):
-        predictor = create_predictor(model_config)
-        chainer.serializers.load_npz(str(model_path), predictor)
-
-        if gpu is not None:
-            predictor.to_gpu(gpu)
-            cuda.get_device_from_id(gpu).use()
-
-        return predictor
-
-    @property
-    def dual_softmax(self):
-        return self.model.dual_softmax
-
-    @property
-    def single_bit(self):
-        return self.model.bit_size // (2 if self.dual_softmax else 1)
-
-    @property
-    def xp(self):
-        return self.model.xp
+        if isinstance(predictor, Path):
+            state_dict = torch.load(predictor)
+            predictor = create_predictor(config.network)
+            predictor.load_state_dict(state_dict)
+        self.predictor = predictor.eval().to(self.device)
 
     def generate(
         self,
         time_length: float,
         sampling_policy: SamplingPolicy,
         num_generate: int,
-        local_array: np.ndarray = None,
-        speaker_nums: Sequence[int] = None,
+        local_array: Union[numpy.ndarray, Tensor] = None,
+        speaker_nums: Union[Sequence[int], Tensor] = None,
     ):
-        assert num_generate <= self.max_batch_size
         assert local_array is None or len(local_array) == num_generate
         assert speaker_nums is None or len(speaker_nums) == num_generate
 
         length = int(self.sampling_rate * time_length)
 
         if local_array is None:
-            local_array = self.xp.empty((num_generate, length, 0), dtype=np.float32)
-        else:
-            local_array = self.xp.asarray(local_array)
+            local_array = torch.empty((num_generate, length, 0)).float()
+        local_array = to_tensor(local_array).to(self.device)
 
         if speaker_nums is not None:
-            speaker_nums = self.xp.asarray(speaker_nums).reshape((-1,))
-            with chainer.using_config("train", False), chainer.using_config(
-                "enable_backprop", False
-            ):
-                s_one = self.model.forward_speaker(speaker_nums).data
+            speaker_nums = to_tensor(speaker_nums).reshape((-1,)).to(self.device)
+            with torch.no_grad():
+                s_one = self.predictor.forward_speaker(speaker_nums)
         else:
             s_one = None
 
@@ -150,15 +92,16 @@ class Generator(object):
         time_length: float,
         sampling_policy: SamplingPolicy,
         morphing_policy: MorphingPolicy,
-        local_array1: np.ndarray,
-        local_array2: np.ndarray,
+        local_array1: Union[numpy.ndarray, Tensor],
+        local_array2: Union[numpy.ndarray, Tensor],
         speaker_nums1: Sequence[int],
         speaker_nums2: Sequence[int],
         start_rates: Sequence[float],
         stop_rates: Sequence[float],
     ):
+        raise NotImplementedError
+
         num_generate = len(local_array1)
-        assert num_generate <= self.max_batch_size
         assert len(local_array2) == num_generate
         assert len(speaker_nums1) == num_generate
         assert len(speaker_nums2) == num_generate
@@ -168,35 +111,33 @@ class Generator(object):
         length = int(self.sampling_rate * time_length)
         local_length = local_array1.shape[1]
 
-        local_array1 = self.xp.asarray(local_array1)
-        local_array2 = self.xp.asarray(local_array2)
+        local_array1 = to_tensor(local_array1)
+        local_array2 = to_tensor(local_array2)
 
-        speaker_nums1 = self.xp.asarray(speaker_nums1).reshape((-1,))
-        speaker_nums2 = self.xp.asarray(speaker_nums2).reshape((-1,))
-        with chainer.using_config("train", False), chainer.using_config(
-            "enable_backprop", False
-        ):
-            s_one1 = self.xp.repeat(
-                self.model.forward_speaker(speaker_nums1).data[:, None],
+        speaker_nums1 = to_tensor(numpy.asarray(speaker_nums1)).reshape((-1,))
+        speaker_nums2 = to_tensor(numpy.asarray(speaker_nums2)).reshape((-1,))
+        with torch.no_grad():
+            s_one1 = numpy.repeat(
+                self.predictor.forward_speaker(speaker_nums1)[:, None],
                 local_length,
                 axis=1,
             )
-            s_one2 = self.xp.repeat(
-                self.model.forward_speaker(speaker_nums2).data[:, None],
+            s_one2 = numpy.repeat(
+                self.predictor.forward_speaker(speaker_nums2)[:, None],
                 local_length,
                 axis=1,
             )
 
         # morphing
-        start_rates = np.asarray(start_rates)
-        stop_rates = np.asarray(stop_rates)
-        morph_rates = self.xp.asarray(
-            np.linspace(
+        start_rates = numpy.asarray(start_rates)
+        stop_rates = numpy.asarray(stop_rates)
+        morph_rates = to_tensor(
+            numpy.linspace(
                 start_rates,
                 stop_rates,
                 num=local_length,
                 axis=1,
-                dtype=np.float32,
+                dtype=numpy.float32,
             )
         ).reshape((num_generate, local_length, 1))
 
@@ -205,22 +146,22 @@ class Generator(object):
         if morphing_policy == MorphingPolicy.linear:
             s_one = s_one1 * morph_rates + s_one2 * (1 - morph_rates)
         elif morphing_policy == MorphingPolicy.sphere:
-            omega = self.xp.arccos(
-                self.xp.sum(
+            omega = numpy.arccos(
+                numpy.sum(
                     (s_one1 * s_one2)
                     / (
-                        self.xp.linalg.norm(s_one1, axis=2, keepdims=True)
-                        * self.xp.linalg.norm(s_one2, axis=2, keepdims=True)
+                        numpy.linalg.norm(s_one1, axis=2, keepdims=True)
+                        * numpy.linalg.norm(s_one2, axis=2, keepdims=True)
                     ),
                     axis=2,
                     keepdims=True,
                 )
             )
-            sin_omega = self.xp.sin(omega)
+            sin_omega = numpy.sin(omega)
             s_one = (
-                self.xp.sin(morph_rates * omega) / sin_omega * s_one1
-                + self.xp.sin((1.0 - morph_rates) * omega) / sin_omega * s_one2
-            ).astype(np.float32)
+                numpy.sin(morph_rates * omega) / sin_omega * s_one1
+                + numpy.sin((1.0 - morph_rates) * omega) / sin_omega * s_one2
+            ).astype(numpy.float32)
         else:
             raise ValueError(morphing_policy)
 
@@ -237,73 +178,43 @@ class Generator(object):
         length: int,
         sampling_policy: SamplingPolicy,
         num_generate: int,
-        local_array: np.ndarray = None,
-        s_one: np.ndarray = None,
+        local_array: Tensor,
+        s_one: Tensor = None,
     ):
-        if self.model.with_local:
-            with chainer.using_config("train", False), chainer.using_config(
-                "enable_backprop", False
-            ):
-                local_array = self.model.forward_encode(
+        if self.predictor.with_local:
+            with torch.no_grad():
+                local_array = self.predictor.forward_encode(
                     l_array=local_array, s_one=s_one
-                ).data
-
-        c = self.xp.zeros([num_generate], dtype=np.float32)
-        c = encode_single(c, bit=self.single_bit)
-
-        hidden_coarse = self.model.gru.init_hx(local_array)[0].data
-
-        if self.use_cpp_inference and sampling_policy == SamplingPolicy.random:
-            import yukarin_wavernn_cpp
-
-            wave = np.zeros((length, num_generate), dtype=np.int32)
-            yukarin_wavernn_cpp.inference(
-                batch_size=num_generate,
-                length=length,
-                output=wave,
-                x=to_numpy(c),
-                l_array=to_numpy(self.xp.transpose(local_array, (1, 0, 2))),
-                hidden=to_numpy(hidden_coarse),
-            )
-        else:
-            if sampling_policy == SamplingPolicy.random:
-                fast_forward_params = get_fast_forward_params(self.model)
-                w_list = fast_generate(
-                    length=length,
-                    x=c,
-                    l_array=local_array,
-                    h=hidden_coarse,
-                    **fast_forward_params,
                 )
+
+        c = numpy.zeros([num_generate], dtype=numpy.float32)
+        c = to_tensor(encode_single(c, bit=self.bit_size)).to(self.device)
+
+        w_list = []
+        hc = None
+        for i in tqdm(range(length), desc="generate"):
+            with torch.no_grad():
+                c, hc = self.predictor.forward_one(
+                    prev_x=c,
+                    prev_l=local_array[:, i],
+                    hidden=hc,
+                )
+
+            if sampling_policy == SamplingPolicy.random:
+                is_random = True
+            elif sampling_policy == SamplingPolicy.maximum:
+                is_random = False
             else:
-                w_list = []
-                hc = hidden_coarse
-                for i in tqdm(range(length), desc="generate"):
-                    with chainer.using_config("train", False), chainer.using_config(
-                        "enable_backprop", False
-                    ):
-                        c, hc = self.model.forward_one(
-                            prev_x=c,
-                            prev_l=local_array[:, i],
-                            hidden=hc,
-                        )
+                raise ValueError(sampling_policy)
 
-                    if sampling_policy == SamplingPolicy.random:
-                        is_random = True
-                    elif sampling_policy == SamplingPolicy.maximum:
-                        is_random = False
-                    else:
-                        raise ValueError(sampling_policy)
+            c = self.predictor.sampling(c, maximum=not is_random)
+            w_list.append(c)
 
-                    c = self.model.sampling(c, maximum=not is_random)
-                    w_list.append(c)
-
-            wave = self.xp.stack(w_list)
-            wave = cuda.to_cpu(wave)
+        wave = torch.stack(w_list).cpu().numpy()
 
         wave = wave.T
-        wave = decode_single(wave, bit=self.single_bit)
+        wave = decode_single(wave, bit=self.bit_size)
         if self.mulaw:
-            wave = decode_mulaw(wave, mu=2 ** self.single_bit)
+            wave = decode_mulaw(wave, mu=2 ** self.bit_size)
 
         return [Wave(wave=w_one, sampling_rate=self.sampling_rate) for w_one in wave]

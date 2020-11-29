@@ -19,7 +19,7 @@ def process_local_data(local_paths: Sequence[Path], time_length: float):
     local_arrays = [
         local_data.array[:size]
         if len(local_data.array) >= size
-        else np.pad(
+        else numpy.pad(
             local_data.array,
             ((0, size - len(local_data.array)), (0, 0)),
             mode="edge",
@@ -50,8 +50,8 @@ def process(
             time_length=time_length,
             sampling_policy=sampling_policy,
             morphing_policy=morphing_policy,
-            local_array1=np.stack(local_arrays1),
-            local_array2=np.stack(local_arrays2),
+            local_array1=numpy.stack(local_arrays1),
+            local_array2=numpy.stack(local_arrays2),
             speaker_nums1=speaker_nums1,
             speaker_nums2=speaker_nums2,
             start_rates=start_rates,
@@ -97,7 +97,7 @@ def main(
 
     config = create_config(model_config)
     model = Generator.load_model(
-        model_config=config.model,
+        model_config=config.network,
         model_path=model_path,
         gpu=gpu,
     )
@@ -133,6 +133,7 @@ def main(
 
 
 if __name__ == "__main__":
+    raise NotImplementedError()
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=Path)
     parser.add_argument("--model_config", type=Path)
