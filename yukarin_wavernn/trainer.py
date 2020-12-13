@@ -53,14 +53,15 @@ def create_trainer(
     _create_iterator = partial(
         create_iterator,
         batch_size=config.train.batchsize,
+        eval_batch_size=config.train.eval_batchsize,
         num_processes=config.train.num_processes,
         use_multithread=config.train.use_multithread,
     )
 
     datasets = create_dataset(config.dataset)
-    train_iter = _create_iterator(datasets["train"], for_train=True)
-    test_iter = _create_iterator(datasets["test"], for_train=False)
-    eval_iter = _create_iterator(datasets["eval"], for_train=False)
+    train_iter = _create_iterator(datasets["train"], for_train=True, for_eval=False)
+    test_iter = _create_iterator(datasets["test"], for_train=False, for_eval=False)
+    eval_iter = _create_iterator(datasets["eval"], for_train=False, for_eval=True)
 
     warnings.simplefilter("error", MultiprocessIterator.TimeoutWarning)
 
@@ -117,7 +118,11 @@ def create_trainer(
     generator = Generator(
         config=config,
         predictor=predictor,
-        max_batch_size=config.train.batchsize,
+        max_batch_size=(
+            config.train.eval_batchsize
+            if config.train.eval_batchsize is not None
+            else config.train.batchsize
+        ),
         use_gpu=True,
     )
     generate_evaluator = GenerateEvaluator(

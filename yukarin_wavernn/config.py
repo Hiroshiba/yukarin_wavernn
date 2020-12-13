@@ -50,6 +50,7 @@ class LossConfig:
 @dataclass
 class TrainConfig:
     batchsize: int
+    eval_batchsize: Optional[int]
     log_iteration: int
     eval_iteration: int
     stop_iteration: int
@@ -130,6 +131,9 @@ def backward_compatible(d: Dict):
 
     if "local_sampling_rate" not in d["dataset"]:
         d["dataset"]["local_sampling_rate"] = None
+    
+    if "eval_batchsize" not in d["train"]:
+        d["train"]["eval_batchsize"] = None
 
 
 def assert_config(config: Config):
