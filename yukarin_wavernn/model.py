@@ -66,9 +66,10 @@ class Model(nn.Module):
             else torch.sum(nll_coarse) / silence.size
         )
 
-        losses = dict(nll_coarse=nll_coarse)
+        loss = nll_coarse
+        losses = dict(loss=loss, nll_coarse=nll_coarse)
 
         if not self.training:
             losses = {key: (l, len(coarse)) for key, l in losses.items()}  # add weight
         report(losses, self)
-        return nll_coarse
+        return loss

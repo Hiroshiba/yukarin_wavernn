@@ -102,7 +102,7 @@ class TestTrainingWaveRNN(unittest.TestCase):
 
 class TestCannotTrainingWaveRNN(unittest.TestCase):
     @retry(tries=10)
-    def _wrapper(self, bit=10, mulaw=True):
+    def _wrapper(self, bit=10, mulaw=False):
         model = _create_model(local_size=0)
         dataset = RandomDataset(
             sampling_length=sampling_length,
