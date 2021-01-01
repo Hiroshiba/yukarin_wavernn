@@ -55,6 +55,7 @@ class TrainConfig:
     optimizer: Dict[str, Any]
     weight_initializer: Optional[str] = None
     num_processes: Optional[int] = None
+    use_multithread: bool = False
     linear_shift: Optional[Dict[str, Any]] = None
     step_shift: Optional[Dict[str, Any]] = None
     optuna: Optional[Dict[str, Any]] = None

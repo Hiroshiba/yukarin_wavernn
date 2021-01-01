@@ -1,5 +1,6 @@
 import warnings
 from copy import copy
+from functools import partial
 from pathlib import Path
 from typing import Any, Dict
 
@@ -19,6 +20,7 @@ from yukarin_wavernn.generator import Generator
 from yukarin_wavernn.model import Model, create_predictor
 from yukarin_wavernn.utility.pytorch_utility import init_weights
 from yukarin_wavernn.utility.trainer_extension import TensorboardReport, WandbReport
+from yukarin_wavernn.utility.trainer_utility import create_iterator
 
 
 def create_trainer(
@@ -48,15 +50,12 @@ def create_trainer(
     model.to(device)
 
     # dataset
-    def _create_iterator(dataset, for_train: bool):
-        return MultiprocessIterator(
-            dataset,
-            config.train.batchsize,
-            repeat=for_train,
-            shuffle=for_train,
-            n_processes=config.train.num_processes,
-            dataset_timeout=60 * 15,
-        )
+    _create_iterator = partial(
+        create_iterator,
+        batch_size=config.train.batchsize,
+        num_processes=config.train.num_processes,
+        use_multithread=config.train.use_multithread,
+    )
 
     datasets = create_dataset(config.dataset)
     train_iter = _create_iterator(datasets["train"], for_train=True)
