@@ -20,7 +20,7 @@ from yukarin_wavernn.generator import Generator
 from yukarin_wavernn.model import Model, create_predictor
 from yukarin_wavernn.utility.pytorch_utility import init_weights
 from yukarin_wavernn.utility.trainer_extension import TensorboardReport, WandbReport
-from yukarin_wavernn.utility.trainer_utility import create_iterator
+from yukarin_wavernn.utility.trainer_utility import LowValueTrigger, create_iterator
 
 
 def create_trainer(
@@ -126,7 +126,7 @@ def create_trainer(
     )
     trainer.extend(
         ext,
-        trigger=triggers.MinValueTrigger("eval/main/mcd", trigger=trigger_eval),
+        trigger=LowValueTrigger("eval/main/mcd", trigger=trigger_eval),
     )
 
     trainer.extend(extensions.FailOnNonNumber(), trigger=trigger_log)
