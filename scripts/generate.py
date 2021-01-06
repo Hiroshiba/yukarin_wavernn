@@ -78,7 +78,7 @@ def generate(
     time_length: float,
     input_batchsize: Optional[int],
     num_test: int,
-    sampling_policy: SamplingPolicy,
+    sampling_policy: str,
     val_local_glob: str,
     val_speaker_num: Optional[int],
     output_dir: Path,
@@ -130,7 +130,7 @@ def generate(
             local_paths=local_path,
             time_length=time_length,
             speaker_nums=speaker_num if speaker_num[0] is not None else None,
-            sampling_policy=sampling_policy,
+            sampling_policy=SamplingPolicy(sampling_policy),
             output_dir=output_dir,
         )
 
@@ -146,7 +146,7 @@ def generate(
                 local_paths=local_path,
                 time_length=time_length,
                 speaker_nums=speaker_num if speaker_num[0] is not None else None,
-                sampling_policy=sampling_policy,
+                sampling_policy=SamplingPolicy(sampling_policy),
                 output_dir=output_dir,
             )
 
@@ -159,9 +159,7 @@ if __name__ == "__main__":
     parser.add_argument("--time_length", type=float, default=1)
     parser.add_argument("--input_batchsize", type=int)
     parser.add_argument("--num_test", type=int, default=5)
-    parser.add_argument(
-        "--sampling_policy", type=SamplingPolicy, default=SamplingPolicy.random
-    )
+    parser.add_argument("--sampling_policy", default=SamplingPolicy.random.value)
     parser.add_argument("--val_local_glob")
     parser.add_argument("--val_speaker_num", type=int)
     parser.add_argument("--output_dir", type=Path)
