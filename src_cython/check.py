@@ -90,13 +90,10 @@ for batch_size in [1, 2, 4]:
 
     if before_output is not None:
         min_batch_size = min(before_output.shape[1], output.shape[1])
-        print(
-            "equal",
-            numpy.all(before_output[:, :min_batch_size] == output[:, :min_batch_size]),
-        )
-        assert numpy.all(
+        flag = numpy.all(
             before_output[:, :min_batch_size] == output[:, :min_batch_size]
         )
+        print("before_output == output :", flag)
     before_output = output
 
 
@@ -112,8 +109,5 @@ with torch.no_grad():
     )
     print("expected", expected)
 
-if output.shape == expected.shape:
-    print("equal", numpy.all(output == to_numpy(expected)))
-    assert numpy.all(output == to_numpy(expected))
-else:
-    print(expected)
+flag = numpy.all(output == to_numpy(expected))
+print("output == expected :", flag)

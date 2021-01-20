@@ -16,3 +16,9 @@ WORKDIR /app
 # install requirements
 COPY requirements.txt /app/
 RUN pip install -r <(cat requirements.txt | grep -v -x 'torch')
+
+# cpp
+COPY src_cython /app/src_cython
+RUN cd /app/src_cython && \
+    CFLAGS="-I." LDFLAGS="-L." python setup.py install
+ENV LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/app/src_cython"

@@ -14,12 +14,13 @@ iteration = 3000
 class TestGenerator(unittest.TestCase):
     @parameterized.expand(
         [
-            (0, 1),
-            (4, 1),
-            (4, 4),
+            (0, 1, False),
+            (4, 1, False),
+            (4, 4, False),
+            (4, 4, True),
         ]
     )
-    def test_generator(self, speaker_size, num_generate):
+    def test_generator(self, speaker_size, num_generate, use_cpp_inference):
         config = get_test_config(
             bit=bit,
             mulaw=mulaw,
@@ -35,9 +36,13 @@ class TestGenerator(unittest.TestCase):
                 iteration=iteration,
             ),
             use_gpu=True,
+            use_cpp_inference=use_cpp_inference,
         )
 
         for sampling_policy in SamplingPolicy.__members__.values():
+            if use_cpp_inference and sampling_policy != SamplingPolicy.random:
+                continue
+
             with self.subTest(sampling_policy=sampling_policy):
                 waves = generator.generate(
                     time_length=0.1,
@@ -55,6 +60,7 @@ class TestGenerator(unittest.TestCase):
                             f"-sampling_policy={sampling_policy}"
                             f"-bit={bit}"
                             f"-mulaw={mulaw}"
+                            f"-cpp={use_cpp_inference}"
                             f"-speaker_size={speaker_size}"
                             f"-num={num}"
                             f"-iteration={iteration}"

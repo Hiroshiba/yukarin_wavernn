@@ -11,6 +11,7 @@ from tqdm import tqdm
 from yukarin_wavernn.config import Config
 from yukarin_wavernn.data import decode_mulaw, decode_single, encode_single
 from yukarin_wavernn.model import create_predictor
+from yukarin_wavernn.network.fast_forward import fast_generate, get_fast_forward_params
 from yukarin_wavernn.network.wave_rnn import WaveRNN
 
 
@@ -35,14 +36,24 @@ def to_tensor(array: Union[Tensor, numpy.ndarray, Any]):
         return array
 
 
+def to_numpy(a):
+    if isinstance(a, Tensor):
+        a = a.detach().cpu().numpy()
+    return numpy.ascontiguousarray(a)
+
+
 class Generator(object):
     def __init__(
         self,
         config: Config,
         predictor: Union[WaveRNN, Path],
         use_gpu: bool,
+        max_batch_size: int = 10,
+        use_cpp_inference: bool = True,
     ):
         self.config = config
+        self.max_batch_size = max_batch_size
+        self.use_cpp_inference = use_cpp_inference
 
         self.sampling_rate = config.dataset.sampling_rate
         self.mulaw = config.dataset.mulaw
@@ -54,6 +65,35 @@ class Generator(object):
             predictor = create_predictor(config.network)
             predictor.load_state_dict(state_dict)
         self.predictor = predictor.eval().to(self.device)
+
+        # setup cpp inference
+        if use_cpp_inference:
+            import yukarin_autoreg_cpp
+
+            params = get_fast_forward_params(self.predictor)
+            local_size = (
+                config.network.conditioning_size * 2
+                if config.network.conditioning_size is not None
+                else 0
+            )
+            yukarin_autoreg_cpp.initialize(
+                graph_length=1000,
+                max_batch_size=max_batch_size,
+                local_size=local_size,
+                hidden_size=config.network.hidden_size,
+                embedding_size=config.network.embedding_size,
+                linear_hidden_size=config.network.linear_hidden_size,
+                output_size=2 ** config.network.bit_size,
+                x_embedder_W=to_numpy(params["x_embedder_W"]),
+                gru_xw=to_numpy(params["gru_xw"]),
+                gru_xb=to_numpy(params["gru_xb"]),
+                gru_hw=to_numpy(params["gru_hw"]),
+                gru_hb=to_numpy(params["gru_hb"]),
+                O1_W=to_numpy(params["O1_W"]),
+                O1_b=to_numpy(params["O1_b"]),
+                O2_W=to_numpy(params["O2_W"]),
+                O2_b=to_numpy(params["O2_b"]),
+            )
 
     def generate(
         self,
@@ -181,36 +221,59 @@ class Generator(object):
         local_array: Tensor,
         s_one: Tensor = None,
     ):
+        assert num_generate <= self.max_batch_size
+
         if self.predictor.with_local:
             with torch.no_grad():
                 local_array = self.predictor.forward_encode(
                     l_array=local_array, s_one=s_one
                 )
 
-        c = numpy.zeros([num_generate], dtype=numpy.float32)
-        c = to_tensor(encode_single(c, bit=self.bit_size)).to(self.device)
+        x = numpy.zeros(num_generate, dtype=numpy.float32)
+        x = encode_single(x, bit=self.bit_size)
 
-        w_list = []
-        hc = None
-        for i in tqdm(range(length), desc="generate"):
-            with torch.no_grad():
-                c, hc = self.predictor.forward_one(
-                    prev_x=c,
-                    prev_l=local_array[:, i],
-                    hidden=hc,
-                )
+        hidden = numpy.zeros(
+            (num_generate, self.predictor.gru.hidden_size),
+            dtype=numpy.float32,
+        )
 
-            if sampling_policy == SamplingPolicy.random:
-                is_random = True
-            elif sampling_policy == SamplingPolicy.maximum:
-                is_random = False
-            else:
-                raise ValueError(sampling_policy)
+        if self.use_cpp_inference:
+            assert sampling_policy == SamplingPolicy.random
 
-            c = self.predictor.sampling(c, maximum=not is_random)
-            w_list.append(c)
+            import yukarin_autoreg_cpp
 
-        wave = torch.stack(w_list).cpu().numpy()
+            wave = numpy.zeros((length, num_generate), dtype=numpy.int32)
+            yukarin_autoreg_cpp.inference(
+                batch_size=num_generate,
+                length=length,
+                output=wave,
+                x=x.astype(numpy.int32),
+                l_array=to_numpy(local_array.transpose(0, 1)),
+                hidden=to_numpy(hidden),
+            )
+        else:
+            x = to_tensor(x).to(self.device)
+            hidden = to_tensor(hidden).to(self.device)
+            x_list = []
+            for i in tqdm(range(length), desc="generate"):
+                with torch.no_grad():
+                    x, hidden = self.predictor.forward_one(
+                        prev_x=x,
+                        prev_l=local_array[:, i],
+                        hidden=hidden,
+                    )
+
+                if sampling_policy == SamplingPolicy.random:
+                    is_random = True
+                elif sampling_policy == SamplingPolicy.maximum:
+                    is_random = False
+                else:
+                    raise ValueError(sampling_policy)
+
+                x = self.predictor.sampling(x, maximum=not is_random)
+                x_list.append(x)
+
+            wave = torch.stack(x_list).cpu().numpy()
 
         wave = wave.T
         wave = decode_single(wave, bit=self.bit_size)
