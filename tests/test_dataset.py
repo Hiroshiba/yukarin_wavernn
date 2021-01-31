@@ -53,6 +53,7 @@ class TestBaseWaveDataset(unittest.TestCase):
                         wave_data=wave_data,
                         silence_data=silence_data,
                         local_data=local_data,
+                        local_sampling_rate=local_sampling_rate,
                         local_padding_size=0,
                     )
 
@@ -113,6 +114,7 @@ class TestBaseWaveDataset(unittest.TestCase):
                         wave_data=wave_data,
                         silence_data=silence_data,
                         local_data=local_data,
+                        local_sampling_rate=None,
                         local_padding_size=local_padding_size,
                         padding_value=numpy.nan,
                     )
@@ -172,6 +174,7 @@ class TestBaseWaveDataset(unittest.TestCase):
             wave_data=wave_data,
             silence_data=silence_data,
             local_data=local_data,
+            local_sampling_rate=local_sampling_rate,
             local_padding_size=0,
         )
 
@@ -179,6 +182,7 @@ class TestBaseWaveDataset(unittest.TestCase):
             sampling_length=sampling_length,
             bit=10,
             mulaw=False,
+            local_sampling_rate=local_sampling_rate,
             local_padding_size=0,
         )
         d = dataset.convert_to_dict(wave, silence, local)
@@ -220,6 +224,7 @@ class TestWavesDataset(unittest.TestCase):
                     gaussian_noise_sigma=0,
                     bit=10,
                     mulaw=mulaw,
+                    local_sampling_rate=None,
                     local_padding_size=0,
                 )
                 for d in dataset:

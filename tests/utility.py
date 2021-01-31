@@ -66,6 +66,7 @@ class SignWaveDataset(BaseWaveDataset):
             sampling_length=sampling_length,
             bit=bit,
             mulaw=mulaw,
+            local_sampling_rate=None,
             local_padding_size=0,
         )
         self.sampling_rate = sampling_rate

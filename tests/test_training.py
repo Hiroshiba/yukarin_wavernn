@@ -108,6 +108,7 @@ class TestCannotTrainingWaveRNN(unittest.TestCase):
             sampling_length=sampling_length,
             bit=bit,
             mulaw=mulaw,
+            local_sampling_rate=None,
             local_padding_size=0,
         )
 
@@ -134,6 +135,7 @@ class TestLocalTrainingWaveRNN(unittest.TestCase):
             sampling_length=sampling_length,
             bit=bit,
             mulaw=mulaw,
+            local_sampling_rate=None,
             local_padding_size=0,
         )
 
@@ -166,6 +168,7 @@ class TestDownSampledLocalTrainingWaveRNN(unittest.TestCase):
             scale=scale,
             bit=bit,
             mulaw=mulaw,
+            local_sampling_rate=None,
             local_padding_size=0,
         )
 

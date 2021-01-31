@@ -15,6 +15,7 @@ class DatasetConfig:
     bit_size: int
     gaussian_noise_sigma: float
     mulaw: bool
+    local_sampling_rate: Optional[int]
     local_padding_size: int
     speaker_dict_path: Optional[str]
     num_speaker: Optional[int]
@@ -126,6 +127,9 @@ def backward_compatible(d: Dict):
 
     if "local_padding_time_length_evaluate" not in d["dataset"]:
         d["dataset"]["local_padding_time_length_evaluate"] = 0
+
+    if "local_sampling_rate" not in d["dataset"]:
+        d["dataset"]["local_sampling_rate"] = None
 
 
 def assert_config(config: Config):
