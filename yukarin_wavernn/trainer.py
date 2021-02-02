@@ -117,6 +117,7 @@ def create_trainer(
     generator = Generator(
         config=config,
         predictor=predictor,
+        max_batch_size=config.train.batchsize,
         use_gpu=True,
     )
     generate_evaluator = GenerateEvaluator(
