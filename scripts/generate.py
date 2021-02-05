@@ -96,14 +96,15 @@ def generate(
     )
     print("model path: ", model_path)
 
+    batchsize = (
+        input_batchsize if input_batchsize is not None else config.train.batchsize
+    )
+
     generator = Generator(
         config=config,
         predictor=model_path,
         use_gpu=True,
-    )
-
-    batchsize = (
-        input_batchsize if input_batchsize is not None else config.train.batchsize
+        max_batch_size=batchsize,
     )
 
     dataset = create_dataset(config.dataset)["test"]

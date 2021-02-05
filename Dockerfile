@@ -13,9 +13,8 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# install requirements
-COPY requirements.txt /app/
-RUN pip install -r <(cat requirements.txt | grep -v -x 'torch')
+# pypi
+RUN pip install llvmlite cython --ignore-installed
 
 # cpp
 COPY src_cython /app/src_cython
@@ -31,3 +30,7 @@ RUN git clone https://github.com/Hiroshiba/yukarin_autoreg_cpp && \
 RUN cd /app/src_cython && \
     CFLAGS="-I." LDFLAGS="-L." python setup.py install
 ENV LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/app/src_cython"
+
+# install requirements
+COPY requirements.txt /app/
+RUN pip install -r <(cat requirements.txt | grep -v -x 'torch')
