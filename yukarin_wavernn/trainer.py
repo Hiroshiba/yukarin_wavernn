@@ -118,12 +118,13 @@ def create_trainer(
     generator = Generator(
         config=config,
         predictor=predictor,
+        use_gpu=True,
         max_batch_size=(
             config.train.eval_batchsize
             if config.train.eval_batchsize is not None
             else config.train.batchsize
         ),
-        use_gpu=True,
+        use_cpp_inference=False,
     )
     generate_evaluator = GenerateEvaluator(
         generator=generator,
