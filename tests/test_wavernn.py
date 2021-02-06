@@ -3,6 +3,7 @@ import unittest
 import torch
 import torch.nn.functional as F
 from parameterized import parameterized_class
+from yukarin_wavernn.config import LocalNetworkType
 from yukarin_wavernn.network.fast_forward import (
     fast_forward_one,
     get_fast_forward_params,
@@ -76,6 +77,7 @@ class TestWaveRNN(unittest.TestCase):
             local_size=loal_size,
             local_scale=1,
             local_layer_num=2,
+            local_network_type=LocalNetworkType.gru,
             speaker_size=speaker_size if with_speaker else 0,
             speaker_embedding_size=3 if with_speaker else 0,
         ).eval()

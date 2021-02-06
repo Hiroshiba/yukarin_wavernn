@@ -19,6 +19,7 @@ def create_predictor(config: NetworkConfig):
         local_size=config.local_size,
         local_scale=config.local_scale,
         local_layer_num=config.local_layer_num,
+        local_network_type=config.local_network_type,
         speaker_size=config.speaker_size,
         speaker_embedding_size=config.speaker_embedding_size,
     )

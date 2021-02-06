@@ -7,6 +7,7 @@ from pytorch_trainer.iterators import MultiprocessIterator
 from pytorch_trainer.training.updaters import StandardUpdater
 from torch import device, optim
 from torch.utils.data.dataset import Dataset
+from yukarin_wavernn.config import LocalNetworkType
 from yukarin_wavernn.dataset import BaseWaveDataset, TensorWrapperDataset
 from yukarin_wavernn.model import Model
 
@@ -169,6 +170,7 @@ def get_test_config(
             linear_hidden_size=512,
             local_scale=1,
             local_layer_num=2,
+            local_network_type=LocalNetworkType.gru,
             speaker_size=speaker_size,
             speaker_embedding_size=speaker_size // 4,
         ),

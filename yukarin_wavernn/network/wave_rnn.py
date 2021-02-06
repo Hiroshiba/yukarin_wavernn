@@ -1,9 +1,10 @@
-from typing import Optional
+from typing import List, Optional
 
 import numpy
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
+from yukarin_wavernn.config import LocalNetworkType
 
 
 def _call_1layer(gru: nn.GRU, x: Tensor, h: Optional[Tensor]):
@@ -25,6 +26,7 @@ class WaveRNN(nn.Module):
         local_size: int,
         local_scale: int,
         local_layer_num: int,
+        local_network_type: LocalNetworkType,
         speaker_size: int,
         speaker_embedding_size: int,
     ):
@@ -41,21 +43,51 @@ class WaveRNN(nn.Module):
         )
 
         input_size = local_size + (speaker_embedding_size if self.with_speaker else 0)
-        self.local_gru = (
-            nn.GRU(
-                input_size=input_size,
-                hidden_size=conditioning_size,
-                num_layers=local_layer_num,
-                batch_first=True,
-                bidirectional=True,
-            )
-            if self.with_local
-            else None
-        )
+
+        local_gru: Optional[nn.Module] = None
+        local_dilated_cnn: Optional[nn.Module] = None
+        if self.with_local:
+            if local_network_type == LocalNetworkType.gru:
+                local_gru = nn.GRU(
+                    input_size=input_size,
+                    hidden_size=conditioning_size,
+                    num_layers=local_layer_num,
+                    batch_first=True,
+                    bidirectional=True,
+                )
+            elif local_network_type == LocalNetworkType.dilated_cnn:
+                cnn: List[nn.Module] = []
+                for i in range(local_layer_num):
+                    cnn.append(
+                        nn.utils.weight_norm(
+                            nn.Conv1d(
+                                in_channels=(
+                                    conditioning_size if i > 0 else input_size
+                                ),
+                                out_channels=conditioning_size,
+                                kernel_size=3,
+                                dilation=2 ** i,
+                                padding=2 ** i,
+                            )
+                        )
+                    )
+                    if i < local_layer_num - 1:
+                        cnn.append(nn.ReLU(inplace=True))
+                local_dilated_cnn = nn.Sequential(*cnn)
+        self.local_gru = local_gru
+        self.local_dilated_cnn = local_dilated_cnn
 
         self.x_embedder = nn.Embedding(self.bins, embedding_size)
 
-        in_size = embedding_size + (2 * conditioning_size if self.with_local else 0)
+        in_size = embedding_size + (
+            (
+                2 * conditioning_size
+                if local_network_type == LocalNetworkType.gru
+                else conditioning_size
+            )
+            if self.with_local
+            else 0
+        )
         self.gru = nn.GRU(
             input_size=in_size,
             hidden_size=hidden_size,
@@ -154,7 +186,12 @@ class WaveRNN(nn.Module):
                 s_array = s_one  # shape: (batch_size, lN, ?)
             l_array = torch.cat((l_array, s_array), dim=2)  # (batch_size, lN, ?)
 
-        l_array, _ = self.local_gru(l_array)
+        if self.local_gru is not None:
+            l_array, _ = self.local_gru(l_array)
+        elif self.local_dilated_cnn is not None:
+            l_array = self.local_dilated_cnn(l_array.transpose(1, 2)).transpose(1, 2)
+        else:
+            raise ValueError
 
         l_array = l_array.repeat_interleave(
             self.local_scale, dim=1

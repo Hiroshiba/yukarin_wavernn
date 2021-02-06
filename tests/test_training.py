@@ -4,7 +4,7 @@ from itertools import chain
 import torch
 from retry import retry
 from torch.utils.data import ConcatDataset
-from yukarin_wavernn.config import LossConfig
+from yukarin_wavernn.config import LocalNetworkType, LossConfig
 from yukarin_wavernn.dataset import SpeakerWavesDataset
 from yukarin_wavernn.model import Model
 from yukarin_wavernn.network.wave_rnn import WaveRNN
@@ -47,6 +47,7 @@ def _create_model(
         local_size=local_size,
         local_scale=local_scale if local_scale is not None else 1,
         local_layer_num=2,
+        local_network_type=LocalNetworkType.gru,
         speaker_size=speaker_size,
         speaker_embedding_size=speaker_size // 4,
     )

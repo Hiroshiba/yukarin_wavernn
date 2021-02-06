@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Dict, Optional
 
 from yukarin_wavernn.utility import dataclass_utility
@@ -27,6 +28,11 @@ class DatasetConfig:
     local_padding_time_length_evaluate: float
 
 
+class LocalNetworkType(str, Enum):
+    gru = "gru"
+    dilated_cnn = "dilated_cnn"
+
+
 @dataclass
 class NetworkConfig:
     bit_size: int
@@ -37,6 +43,7 @@ class NetworkConfig:
     linear_hidden_size: int
     local_scale: int
     local_layer_num: int
+    local_network_type: str
     speaker_size: int
     speaker_embedding_size: int
 
@@ -131,9 +138,12 @@ def backward_compatible(d: Dict):
 
     if "local_sampling_rate" not in d["dataset"]:
         d["dataset"]["local_sampling_rate"] = None
-    
+
     if "eval_batchsize" not in d["train"]:
         d["train"]["eval_batchsize"] = None
+
+    if "local_network_type" not in d["network"]:
+        d["network"]["local_network_type"] = "gru"
 
 
 def assert_config(config: Config):

@@ -2,7 +2,7 @@ import numpy
 import torch
 import yukarin_autoreg_cpp
 from torch import Tensor
-from yukarin_wavernn.config import NetworkConfig
+from yukarin_wavernn.config import LocalNetworkType, NetworkConfig
 from yukarin_wavernn.model import create_predictor
 from yukarin_wavernn.network.fast_forward import fast_generate, get_fast_forward_params
 
@@ -18,6 +18,7 @@ config = NetworkConfig(
     linear_hidden_size=896,
     local_scale=1,
     local_layer_num=1,
+    local_network_type=LocalNetworkType.gru,
     speaker_size=0,
     speaker_embedding_size=0,
 )
