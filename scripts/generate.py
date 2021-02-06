@@ -41,6 +41,7 @@ def _get_predictor_model_path(
 def process(
     generator: Generator,
     local_paths: Sequence[Path],
+    local_sampling_rate: Optional[int],
     time_length: float,
     speaker_nums: Optional[Sequence[int]],
     sampling_policy: SamplingPolicy,
@@ -48,16 +49,24 @@ def process(
     postfix="",
 ):
     local_datas = [SamplingData.load(local_path) for local_path in local_paths]
+
+    if local_sampling_rate is None:
+        rate = local_datas[0].rate
+        local_arrays = [l.array for l in local_datas]
+    else:
+        rate = local_sampling_rate
+        local_arrays = [l.resample(rate) for l in local_datas]
+
     size = int((time_length + 5) * local_datas[0].rate)
     local_arrays = [
-        local_data.array[:size]
-        if len(local_data.array) >= size
+        l[:size]
+        if len(l) >= size
         else numpy.pad(
-            local_data.array,
-            ((0, size - len(local_data.array)), (0, 0)),
+            l,
+            ((0, size - len(l)), (0, 0)),
             mode="edge",
         )
-        for local_data in local_datas
+        for l in local_arrays
     ]
 
     waves = generator.generate(
@@ -130,6 +139,7 @@ def generate(
         process(
             generator=generator,
             local_paths=local_path,
+            local_sampling_rate=config.dataset.local_sampling_rate,
             time_length=time_length,
             speaker_nums=speaker_num if speaker_num[0] is not None else None,
             sampling_policy=SamplingPolicy(sampling_policy),
@@ -146,6 +156,7 @@ def generate(
             process(
                 generator=generator,
                 local_paths=local_path,
+                local_sampling_rate=config.dataset.local_sampling_rate,
                 time_length=time_length,
                 speaker_nums=speaker_num if speaker_num[0] is not None else None,
                 sampling_policy=SamplingPolicy(sampling_policy),
