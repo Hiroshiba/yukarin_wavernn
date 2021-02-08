@@ -30,7 +30,7 @@ class DatasetConfig:
 
 class LocalNetworkType(str, Enum):
     gru = "gru"
-    dilated_cnn = "dilated_cnn"
+    skip_dilated_cnn = "skip_dilated_cnn"
 
 
 @dataclass

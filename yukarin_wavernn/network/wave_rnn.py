@@ -1,10 +1,11 @@
-from typing import List, Optional
+from typing import Optional
 
 import numpy
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 from yukarin_wavernn.config import LocalNetworkType
+from yukarin_wavernn.network.local_encoder import SkipDilatedCNN
 
 
 def _call_1layer(gru: nn.GRU, x: Tensor, h: Optional[Tensor]):
@@ -45,7 +46,7 @@ class WaveRNN(nn.Module):
         input_size = local_size + (speaker_embedding_size if self.with_speaker else 0)
 
         local_gru: Optional[nn.Module] = None
-        local_dilated_cnn: Optional[nn.Module] = None
+        local_encoder: Optional[nn.Module] = None
         if self.with_local:
             if local_network_type == LocalNetworkType.gru:
                 local_gru = nn.GRU(
@@ -55,27 +56,16 @@ class WaveRNN(nn.Module):
                     batch_first=True,
                     bidirectional=True,
                 )
-            elif local_network_type == LocalNetworkType.dilated_cnn:
-                cnn: List[nn.Module] = []
-                for i in range(local_layer_num):
-                    cnn.append(
-                        nn.utils.weight_norm(
-                            nn.Conv1d(
-                                in_channels=(
-                                    conditioning_size if i > 0 else input_size
-                                ),
-                                out_channels=conditioning_size,
-                                kernel_size=3,
-                                dilation=2 ** i,
-                                padding=2 ** i,
-                            )
-                        )
-                    )
-                    if i < local_layer_num - 1:
-                        cnn.append(nn.ReLU(inplace=True))
-                local_dilated_cnn = nn.Sequential(*cnn)
+            elif local_network_type == LocalNetworkType.skip_dilated_cnn:
+                local_encoder = SkipDilatedCNN(
+                    input_size=input_size,
+                    layer_num=local_layer_num,
+                    conditioning_size=conditioning_size,
+                )
+            else:
+                raise ValueError(local_network_type)
         self.local_gru = local_gru
-        self.local_dilated_cnn = local_dilated_cnn
+        self.local_encoder = local_encoder
 
         self.x_embedder = nn.Embedding(self.bins, embedding_size)
 
@@ -108,7 +98,7 @@ class WaveRNN(nn.Module):
     def with_local(self):
         return self.local_size > 0 or self.with_speaker
 
-    def __call__(
+    def forward(
         self,
         x_array: Tensor,
         l_array: Tensor,
@@ -188,8 +178,8 @@ class WaveRNN(nn.Module):
 
         if self.local_gru is not None:
             l_array, _ = self.local_gru(l_array)
-        elif self.local_dilated_cnn is not None:
-            l_array = self.local_dilated_cnn(l_array.transpose(1, 2)).transpose(1, 2)
+        elif self.local_encoder is not None:
+            l_array = self.local_encoder(l_array)
         else:
             raise ValueError
 
