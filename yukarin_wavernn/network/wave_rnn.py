@@ -5,7 +5,10 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 from yukarin_wavernn.config import LocalNetworkType
-from yukarin_wavernn.network.local_encoder import SkipDilatedCNN
+from yukarin_wavernn.network.local_encoder import (
+    ResidualBottleneckDilatedCNN,
+    SkipDilatedCNN,
+)
 
 
 def _call_1layer(gru: nn.GRU, x: Tensor, h: Optional[Tensor]):
@@ -58,6 +61,12 @@ class WaveRNN(nn.Module):
                 )
             elif local_network_type == LocalNetworkType.skip_dilated_cnn:
                 local_encoder = SkipDilatedCNN(
+                    input_size=input_size,
+                    layer_num=local_layer_num,
+                    conditioning_size=conditioning_size,
+                )
+            elif local_network_type == LocalNetworkType.residual_bottleneck_dilated_cnn:
+                local_encoder = ResidualBottleneckDilatedCNN(
                     input_size=input_size,
                     layer_num=local_layer_num,
                     conditioning_size=conditioning_size,
