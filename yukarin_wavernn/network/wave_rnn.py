@@ -7,6 +7,7 @@ from torch import Tensor, nn
 from yukarin_wavernn.config import LocalNetworkType
 from yukarin_wavernn.network.local_encoder import (
     ResidualBottleneckDilatedCNN,
+    ResidualBottleneckDilatedCNNBN,
     SkipDilatedCNN,
 )
 
@@ -67,6 +68,15 @@ class WaveRNN(nn.Module):
                 )
             elif local_network_type == LocalNetworkType.residual_bottleneck_dilated_cnn:
                 local_encoder = ResidualBottleneckDilatedCNN(
+                    input_size=input_size,
+                    layer_num=local_layer_num,
+                    conditioning_size=conditioning_size,
+                )
+            elif (
+                local_network_type
+                == LocalNetworkType.residual_bottleneck_dilated_cnn_bn
+            ):
+                local_encoder = ResidualBottleneckDilatedCNNBN(
                     input_size=input_size,
                     layer_num=local_layer_num,
                     conditioning_size=conditioning_size,

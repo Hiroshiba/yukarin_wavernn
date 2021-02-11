@@ -32,6 +32,7 @@ class LocalNetworkType(str, Enum):
     gru = "gru"
     skip_dilated_cnn = "skip_dilated_cnn"
     residual_bottleneck_dilated_cnn = "residual_bottleneck_dilated_cnn"
+    residual_bottleneck_dilated_cnn_bn = "residual_bottleneck_dilated_cnn_bn"
 
 
 @dataclass

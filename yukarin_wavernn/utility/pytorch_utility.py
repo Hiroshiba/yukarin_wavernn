@@ -34,8 +34,11 @@ def init_weights(model: torch.nn.Module, name: str):
             raise ValueError(name)
 
         for key, param in layer.named_parameters():
-            if "weight" in key:
-                initializer(param)
+            try:
+                if "weight" in key:
+                    initializer(param)
+            except Exception as e:
+                print(f"init_weights exception at {key}:", e)
 
     model.apply(_init_weights)
 
