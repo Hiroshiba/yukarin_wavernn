@@ -1,9 +1,13 @@
 import numpy
-import torch
-import torch.nn.functional as F
-from torch import Tensor
-from tqdm import tqdm
+from numba import njit
+from torch.tensor import Tensor
 from yukarin_wavernn.network.wave_rnn import WaveRNN
+
+
+def to_numpy(a):
+    if isinstance(a, Tensor):
+        a = a.detach().cpu().numpy()
+    return numpy.ascontiguousarray(a)
 
 
 def get_fast_forward_params(model: WaveRNN):
@@ -20,49 +24,53 @@ def get_fast_forward_params(model: WaveRNN):
     O2_b = model.O2.bias
 
     return dict(
-        x_embedder_W=x_embedder_W,
-        gru_xw=gru_xw,
-        gru_hw=gru_hw,
-        gru_xb=gru_xb,
-        gru_hb=gru_hb,
-        O1_W=O1_W,
-        O1_b=O1_b,
-        O2_W=O2_W,
-        O2_b=O2_b,
+        x_embedder_W=to_numpy(x_embedder_W),
+        gru_xw=to_numpy(gru_xw),
+        gru_hw=to_numpy(gru_hw),
+        gru_xb=to_numpy(gru_xb),
+        gru_hb=to_numpy(gru_hb),
+        O1_W=to_numpy(O1_W),
+        O1_b=to_numpy(O1_b),
+        O2_W=to_numpy(O2_W),
+        O2_b=to_numpy(O2_b),
     )
 
 
-def calc_gru_r(W_r_x, U_r_h):
-    # r = torch.tanh((W_r_x + U_r_h) * half) * half + half
+@njit(nogil=True)
+def calc_gru_r(W_r_x: numpy.ndarray, U_r_h: numpy.ndarray):
+    # r = numpy.tanh((W_r_x +: numpy.ndarray U_r_h) * half) * half + half
     r = W_r_x
     r += U_r_h
     r *= 0.5
-    torch.tanh(r, out=r)
+    numpy.tanh(r, r)
     r *= 0.5
     r += 0.5
     return r
 
 
-def calc_gru_z(W_z_x, U_z_h):
-    # z = torch.tanh((W_z_x + U_z_h) * half) * half + half
+@njit(nogil=True)
+def calc_gru_z(W_z_x: numpy.ndarray, U_z_h: numpy.ndarray):
+    # z = numpy.tanh((W_z_x + U_z_h) * half) * half + half
     z = W_z_x
     z += U_z_h
     z *= 0.5
-    torch.tanh(z, out=z)
+    numpy.tanh(z, z)
     z *= 0.5
     z += 0.5
     return z
 
 
-def calc_gru_h_bar(r, U_x, W_x):
-    # h_bar = torch.tanh(W_x + r * U_x)
+@njit(nogil=True)
+def calc_gru_h_bar(r: numpy.ndarray, U_x: numpy.ndarray, W_x: numpy.ndarray):
+    # h_bar = numpy.tanh(W_x + r * U_x)
     r *= U_x
     r += W_x
-    torch.tanh(r, out=r)
+    numpy.tanh(r, r)
     return r
 
 
-def calc_gru_hidden(hidden, z, h_bar):
+@njit(nogil=True)
+def calc_gru_hidden(hidden: numpy.ndarray, z: numpy.ndarray, h_bar: numpy.ndarray):
     # new_hidden = z * hidden + (one - z) * h_bar
     hidden *= z
     z *= -1
@@ -72,41 +80,53 @@ def calc_gru_hidden(hidden, z, h_bar):
     return hidden
 
 
-def gru_element_wise(hidden, W_r_x, W_z_x, W_x, U_r_h, U_z_h, U_x):
+@njit(nogil=True)
+def gru_element_wise(
+    hidden: numpy.ndarray,
+    W_r_x: numpy.ndarray,
+    W_z_x: numpy.ndarray,
+    W_x: numpy.ndarray,
+    U_r_h: numpy.ndarray,
+    U_z_h: numpy.ndarray,
+    U_x: numpy.ndarray,
+):
     r = calc_gru_r(W_r_x, U_r_h)
     z = calc_gru_z(W_z_x, U_z_h)
     h_bar = calc_gru_h_bar(r, U_x, W_x)
     return calc_gru_hidden(hidden, z, h_bar)
 
 
+@njit(nogil=True)
 def fast_forward_one(
-    prev_x: Tensor,
-    prev_l: Tensor,
-    hidden: Tensor,
-    x_embedder_W: Tensor,
-    gru_xw: Tensor,
-    gru_hw: Tensor,
-    gru_xb: Tensor,
-    gru_hb: Tensor,
-    O1_W: Tensor,
-    O1_b: Tensor,
-    O2_W: Tensor,
-    O2_b: Tensor,
-    w_gru_x: Tensor,
-    w_gru_h: Tensor,
-    w_out_x1: Tensor,
-    w_out_x2: Tensor,
+    prev_x: numpy.ndarray,
+    prev_l: numpy.ndarray,
+    hidden: numpy.ndarray,
+    x_embedder_W: numpy.ndarray,
+    gru_xw: numpy.ndarray,
+    gru_hw: numpy.ndarray,
+    gru_xb: numpy.ndarray,
+    gru_hb: numpy.ndarray,
+    O1_W: numpy.ndarray,
+    O1_b: numpy.ndarray,
+    O2_W: numpy.ndarray,
+    O2_b: numpy.ndarray,
+    w_gru_x: numpy.ndarray,
+    w_gru_h: numpy.ndarray,
+    w_out_x1: numpy.ndarray,
+    w_out_x2: numpy.ndarray,
 ):
-    prev_xl = torch.cat((x_embedder_W[prev_x], prev_l), dim=1)  # (batch_size, ?)
+    prev_xl = numpy.concatenate(
+        (x_embedder_W[prev_x], prev_l), axis=1
+    )  # (batch_size, ?)
 
     # gru_x = prev_xl.dot(gru_xw) + gru_xb
     gru_x = w_gru_x
-    torch.mm(prev_xl, gru_xw, out=gru_x)
+    numpy.dot(prev_xl, gru_xw, gru_x)
     gru_x += gru_xb
 
     # gru_h = hidden.dot(gru_hw) + gru_hb
     gru_h = w_gru_h
-    torch.mm(hidden, gru_hw, out=gru_h)
+    numpy.dot(hidden, gru_hw, gru_h)
     gru_h += gru_hb
 
     size = gru_x.shape[1] // 3
@@ -116,42 +136,58 @@ def fast_forward_one(
 
     # out_x = new_hidden.dot(O1_W) + O1_b
     out_x1 = w_out_x1
-    torch.mm(new_hidden, O1_W, out=out_x1)
+    numpy.dot(new_hidden, O1_W, out_x1)
     out_x1 += O1_b
 
-    torch.maximum(out_x1, torch.tensor(0.0).to(out_x1.device), out=out_x1)
+    numpy.maximum(out_x1, 0, out_x1)
 
     # out_x = out_x.dot(O2_W) + O2_b
     out_x2 = w_out_x2
-    torch.mm(out_x1, O2_W, out=out_x2)
+    numpy.dot(out_x1, O2_W, out_x2)
     out_x2 += O2_b
     return out_x2, new_hidden
 
 
+@njit(nogil=True)
+def _max_axis1_keepdims(array: numpy.ndarray):
+    out = numpy.empty((array.shape[0], 1), dtype=array.dtype)
+    for i in range(array.shape[0]):
+        out[i] = array[i].max()
+    return out
+
+
+@njit(nogil=True)
+def _random_choice_p(prob: numpy.ndarray):
+    cumsum = numpy.cumsum(prob)
+    rand = numpy.random.random() * cumsum[-1]
+    return numpy.searchsorted(cumsum, rand, side="right")
+
+
+@njit(nogil=True)
 def fast_generate(
     length: int,
-    x: Tensor,
-    l_array: Tensor,
-    h: Tensor,
-    x_embedder_W: Tensor,
-    gru_xw: Tensor,
-    gru_hw: Tensor,
-    gru_xb: Tensor,
-    gru_hb: Tensor,
-    O1_W: Tensor,
-    O1_b: Tensor,
-    O2_W: Tensor,
-    O2_b: Tensor,
+    x: numpy.ndarray,
+    l_array: numpy.ndarray,
+    h: numpy.ndarray,
+    x_embedder_W: numpy.ndarray,
+    gru_xw: numpy.ndarray,
+    gru_hw: numpy.ndarray,
+    gru_xb: numpy.ndarray,
+    gru_hb: numpy.ndarray,
+    O1_W: numpy.ndarray,
+    O1_b: numpy.ndarray,
+    O2_W: numpy.ndarray,
+    O2_b: numpy.ndarray,
 ):
     batchsize = len(x)
-    w_gru_x = torch.empty((batchsize, len(gru_xb)), dtype=h.dtype, device=x.device)
-    w_gru_h = torch.empty((batchsize, len(gru_hb)), dtype=h.dtype, device=x.device)
-    w_out_x1 = torch.empty((batchsize, len(O1_b)), dtype=h.dtype, device=x.device)
-    w_out_x2 = torch.empty((batchsize, len(O2_b)), dtype=h.dtype, device=x.device)
+    w_gru_x = numpy.empty((batchsize, len(gru_xb)), dtype=h.dtype)
+    w_gru_h = numpy.empty((batchsize, len(gru_hb)), dtype=h.dtype)
+    w_out_x1 = numpy.empty((batchsize, len(O1_b)), dtype=h.dtype)
+    w_out_x2 = numpy.empty((batchsize, len(O2_b)), dtype=h.dtype)
 
-    output = []
-    for i in tqdm(range(length), desc="fast_generate"):
-        dist, h = fast_forward_one(
+    output = numpy.empty((length, batchsize), dtype=x.dtype)
+    for i in range(length):
+        d, h = fast_forward_one(
             prev_x=x,
             prev_l=l_array[:, i],
             hidden=h,
@@ -169,13 +205,15 @@ def fast_generate(
             w_out_x1=w_out_x1,
             w_out_x2=w_out_x2,
         )
+        dist = d.astype(numpy.float64)
 
-        # softmax
-        dist = F.log_softmax(dist.double(), dim=1)
+        dist -= _max_axis1_keepdims(dist)
+        numpy.exp(dist, dist)
+        dist /= _max_axis1_keepdims(dist)
 
-        # sampling
-        random = torch.from_numpy(numpy.random.gumbel(size=dist.shape)).to(dist.device)
-        x = (dist + random).argmax(dim=1)
-        output.append(x)
+        for j in range(batchsize):
+            x[j] = _random_choice_p(dist[j])
+
+        output[i] = x
 
     return output

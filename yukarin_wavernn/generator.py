@@ -11,7 +11,11 @@ from tqdm import tqdm
 from yukarin_wavernn.config import Config
 from yukarin_wavernn.data import decode_mulaw, decode_single, encode_single
 from yukarin_wavernn.model import create_predictor
-from yukarin_wavernn.network.fast_forward import fast_generate, get_fast_forward_params
+from yukarin_wavernn.network.fast_forward import (
+    fast_generate,
+    get_fast_forward_params,
+    to_numpy,
+)
 from yukarin_wavernn.network.wave_rnn import WaveRNN
 
 
@@ -36,12 +40,6 @@ def to_tensor(array: Union[Tensor, numpy.ndarray, Any]):
         return array
 
 
-def to_numpy(a):
-    if isinstance(a, Tensor):
-        a = a.detach().cpu().numpy()
-    return numpy.ascontiguousarray(a)
-
-
 class Generator(object):
     def __init__(
         self,
@@ -49,11 +47,12 @@ class Generator(object):
         predictor: Union[WaveRNN, Path],
         use_gpu: bool,
         max_batch_size: int = 10,
-        use_cpp_inference: bool = True,
+        use_fast_inference: bool = True,
     ):
         self.config = config
         self.max_batch_size = max_batch_size
-        self.use_cpp_inference = use_cpp_inference
+        self.use_gpu = use_gpu
+        self.use_fast_inference = use_fast_inference
 
         self.sampling_rate = config.dataset.sampling_rate
         self.mulaw = config.dataset.mulaw
@@ -66,8 +65,8 @@ class Generator(object):
             predictor.load_state_dict(state_dict)
         self.predictor = predictor.eval().to(self.device)
 
-        # setup cpp inference
-        if use_cpp_inference:
+        if use_fast_inference and use_gpu:
+            # setup cpp inference
             import yukarin_autoreg_cpp
 
             params = get_fast_forward_params(self.predictor)
@@ -84,15 +83,7 @@ class Generator(object):
                 embedding_size=config.network.embedding_size,
                 linear_hidden_size=config.network.linear_hidden_size,
                 output_size=2 ** config.network.bit_size,
-                x_embedder_W=to_numpy(params["x_embedder_W"]),
-                gru_xw=to_numpy(params["gru_xw"]),
-                gru_xb=to_numpy(params["gru_xb"]),
-                gru_hw=to_numpy(params["gru_hw"]),
-                gru_hb=to_numpy(params["gru_hb"]),
-                O1_W=to_numpy(params["O1_W"]),
-                O1_b=to_numpy(params["O1_b"]),
-                O2_W=to_numpy(params["O2_W"]),
-                O2_b=to_numpy(params["O2_b"]),
+                **params,
             )
 
     def generate(
@@ -237,7 +228,7 @@ class Generator(object):
             dtype=numpy.float32,
         )
 
-        if self.use_cpp_inference:
+        if self.use_fast_inference and self.use_gpu:
             assert sampling_policy == SamplingPolicy.random
 
             import yukarin_autoreg_cpp
@@ -251,6 +242,19 @@ class Generator(object):
                 l_array=to_numpy(local_array.transpose(0, 1)),
                 hidden=to_numpy(hidden),
             )
+
+        elif self.use_fast_inference and not self.use_gpu:
+            assert sampling_policy == SamplingPolicy.random
+
+            params = get_fast_forward_params(self.predictor)
+            x_list = fast_generate(
+                length=length,
+                x=x,
+                l_array=local_array.numpy(),
+                h=hidden,
+                **params,
+            )
+            wave = numpy.stack(x_list)
         else:
             x = to_tensor(x).to(self.device)
             hidden = to_tensor(hidden).to(self.device)

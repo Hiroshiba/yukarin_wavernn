@@ -1,5 +1,6 @@
 import unittest
 
+import numpy
 import torch
 import torch.nn.functional as F
 from parameterized import parameterized_class
@@ -26,16 +27,16 @@ def _make_hidden():
 def get_fast_forward_params_one(wave_rnn):
     fast_forward_params = get_fast_forward_params(wave_rnn)
     dtype = fast_forward_params["gru_xb"].dtype
-    fast_forward_params["w_gru_x"] = torch.empty(
+    fast_forward_params["w_gru_x"] = numpy.empty(
         (batch_size, len(fast_forward_params["gru_xb"])), dtype=dtype
     )
-    fast_forward_params["w_gru_h"] = torch.empty(
+    fast_forward_params["w_gru_h"] = numpy.empty(
         (batch_size, len(fast_forward_params["gru_hb"])), dtype=dtype
     )
-    fast_forward_params["w_out_x1"] = torch.empty(
+    fast_forward_params["w_out_x1"] = numpy.empty(
         (batch_size, len(fast_forward_params["O1_b"])), dtype=dtype
     )
-    fast_forward_params["w_out_x2"] = torch.empty(
+    fast_forward_params["w_out_x2"] = numpy.empty(
         (batch_size, len(fast_forward_params["O2_b"])), dtype=dtype
     )
     return fast_forward_params
@@ -141,13 +142,12 @@ class TestWaveRNN(unittest.TestCase):
         )
         l_one = wave_rnn.forward_encode(l_array=self.l_one, s_one=s_one)
         fast_forward_params = get_fast_forward_params_one(wave_rnn)
-        with torch.no_grad():
-            fast_forward_one(
-                prev_x=self.x_one[:, 0],
-                prev_l=l_one[:, 0],
-                hidden=hidden,
-                **fast_forward_params,
-            )
+        fast_forward_one(
+            prev_x=self.x_one[:, 0].numpy(),
+            prev_l=l_one[:, 0].detach().numpy(),
+            hidden=hidden.numpy(),
+            **fast_forward_params,
+        )
 
     def test_batchsize1_forward(self):
         wave_rnn = self.wave_rnn
@@ -195,35 +195,6 @@ class TestWaveRNN(unittest.TestCase):
             l_one[:1, 0],
             hidden=hidden[:1],
         )
-
-        assert torch.allclose(oa[:1], ob, atol=1e-6)
-        assert torch.allclose(ha[:1], hb, atol=1e-6)
-
-    def test_batchsize1_fast_forward_one(self):
-        wave_rnn = self.wave_rnn
-        hidden = _make_hidden()
-        s_one = (
-            self.s_one
-            if not wave_rnn.with_speaker
-            else wave_rnn.forward_speaker(self.s_one)
-        )
-        l_one = wave_rnn.forward_encode(l_array=self.l_one, s_one=s_one)
-        fast_forward_params = get_fast_forward_params_one(wave_rnn)
-
-        with torch.no_grad():
-            oa, ha = fast_forward_one(
-                prev_x=self.x_one[:, 0],
-                prev_l=l_one[:, 0],
-                hidden=hidden,
-                **fast_forward_params,
-            )
-
-            ob, hb = fast_forward_one(
-                prev_x=self.x_one[:1, 0],
-                prev_l=l_one[:1, 0],
-                hidden=hidden[:1],
-                **fast_forward_params,
-            )
 
         assert torch.allclose(oa[:1], ob, atol=1e-6)
         assert torch.allclose(ha[:1], hb, atol=1e-6)
@@ -304,21 +275,20 @@ class TestWaveRNN(unittest.TestCase):
             hidden=hidden,
         )
 
-        hb = hidden
+        hb = hidden.numpy()
         for i, (x, l) in enumerate(
             zip(
                 torch.split(self.x_array, 1, dim=1),
                 torch.split(l_array, 1, dim=1),
             )
         ):
-            with torch.no_grad():
-                ob, hb = fast_forward_one(
-                    prev_x=x[:, 0],
-                    prev_l=l[:, 0],
-                    hidden=hb,
-                    **fast_forward_params,
-                )
+            ob, hb = fast_forward_one(
+                prev_x=x[:, 0].numpy(),
+                prev_l=l[:, 0].detach().numpy(),
+                hidden=hb,
+                **fast_forward_params,
+            )
 
-            assert torch.allclose(oa[:, :, i], ob, atol=1e-6)
+            assert numpy.allclose(oa[:, :, i].detach().numpy(), ob, atol=1e-6)
 
-        assert torch.allclose(ha, hb, atol=1e-6)
+        assert numpy.allclose(ha.detach().numpy(), hb, atol=1e-6)

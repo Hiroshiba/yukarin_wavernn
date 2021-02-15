@@ -114,7 +114,7 @@ def generate(
         predictor=model_path,
         use_gpu=True,
         max_batch_size=batchsize,
-        use_cpp_inference=False,
+        use_fast_inference=False,
     )
 
     dataset = create_dataset(config.dataset)["test"]

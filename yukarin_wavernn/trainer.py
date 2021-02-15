@@ -124,7 +124,7 @@ def create_trainer(
             if config.train.eval_batchsize is not None
             else config.train.batchsize
         ),
-        use_cpp_inference=False,
+        use_fast_inference=False,
     )
     generate_evaluator = GenerateEvaluator(
         generator=generator,

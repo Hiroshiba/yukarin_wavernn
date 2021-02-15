@@ -57,15 +57,7 @@ yukarin_autoreg_cpp.initialize(
     embedding_size=config.embedding_size,
     linear_hidden_size=config.linear_hidden_size,
     output_size=2 ** config.bit_size,
-    x_embedder_W=to_numpy(params["x_embedder_W"]),
-    gru_xw=to_numpy(params["gru_xw"]),
-    gru_xb=to_numpy(params["gru_xb"]),
-    gru_hw=to_numpy(params["gru_hw"]),
-    gru_hb=to_numpy(params["gru_hb"]),
-    O1_W=to_numpy(params["O1_W"]),
-    O1_b=to_numpy(params["O1_b"]),
-    O2_W=to_numpy(params["O2_W"]),
-    O2_b=to_numpy(params["O2_b"]),
+    **params,
 )
 
 before_output = None

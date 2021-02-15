@@ -20,7 +20,7 @@ class TestGenerator(unittest.TestCase):
             (4, 4, True),
         ]
     )
-    def test_generator(self, speaker_size, num_generate, use_cpp_inference):
+    def test_generator(self, speaker_size, num_generate, use_fast_inference):
         config = get_test_config(
             bit=bit,
             mulaw=mulaw,
@@ -36,11 +36,11 @@ class TestGenerator(unittest.TestCase):
                 iteration=iteration,
             ),
             use_gpu=True,
-            use_cpp_inference=use_cpp_inference,
+            use_fast_inference=use_fast_inference,
         )
 
         for sampling_policy in SamplingPolicy.__members__.values():
-            if use_cpp_inference and sampling_policy != SamplingPolicy.random:
+            if use_fast_inference and sampling_policy != SamplingPolicy.random:
                 continue
 
             with self.subTest(sampling_policy=sampling_policy):
@@ -60,7 +60,7 @@ class TestGenerator(unittest.TestCase):
                             f"-sampling_policy={sampling_policy}"
                             f"-bit={bit}"
                             f"-mulaw={mulaw}"
-                            f"-cpp={use_cpp_inference}"
+                            f"-fast={use_fast_inference}"
                             f"-speaker_size={speaker_size}"
                             f"-num={num}"
                             f"-iteration={iteration}"

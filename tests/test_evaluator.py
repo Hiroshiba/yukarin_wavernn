@@ -35,6 +35,7 @@ class TestEvaluator(unittest.TestCase):
                 iteration=iteration,
             ),
             use_gpu=True,
+            use_fast_inference=False,
         )
 
         speaker_nums = list(range(num_generate)) if speaker_size > 0 else None
