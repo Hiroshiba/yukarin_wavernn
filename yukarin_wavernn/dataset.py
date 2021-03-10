@@ -76,8 +76,7 @@ class BaseWaveDataset(Dataset):
             l_rate = local_sampling_rate
             l_array = local_data.resample(l_rate)
 
-        assert sr % l_rate == 0
-        l_scale = int(sr // l_rate)
+        l_scale = int(round(sr / l_rate))
 
         length = len(l_array) * l_scale
         assert (
