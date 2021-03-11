@@ -52,7 +52,7 @@ class NetworkConfig:
 
 @dataclass
 class LossConfig:
-    eliminate_silence: bool
+    silence_weight: float
     mean_silence: bool
 
 
@@ -108,9 +108,6 @@ def backward_compatible(d: Dict):
     if "mulaw" not in d["dataset"]:
         d["dataset"]["mulaw"] = False
 
-    if "eliminate_silence" not in d["loss"]:
-        d["loss"]["eliminate_silence"] = True
-
     if "local_padding_size" not in d["dataset"]:
         d["dataset"]["local_padding_size"] = 0
 
@@ -146,6 +143,13 @@ def backward_compatible(d: Dict):
 
     if "local_network_type" not in d["network"]:
         d["network"]["local_network_type"] = "gru"
+
+    if "eliminate_silence" in d["loss"]:
+        d["loss"]["silence_weight"] = 0
+        d["loss"].pop("eliminate_silence")
+
+    if "silence_weight" not in d["loss"]:
+        d["loss"]["silence_weight"] = 0
 
 
 def assert_config(config: Config):

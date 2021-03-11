@@ -83,7 +83,9 @@ class BaseWaveDataset(Dataset):
             abs(length - len(wave_data.wave)) < l_scale * 4
         ), f"{abs(length - len(wave_data.wave))} {l_scale}"
 
-        assert local_padding_size % l_scale == 0
+        assert (
+            local_padding_size % l_scale == 0
+        ), f"local_padding_size: {local_padding_size}, l_scale: {l_scale}"
         l_pad = local_padding_size // l_scale
 
         l_length = length // l_scale

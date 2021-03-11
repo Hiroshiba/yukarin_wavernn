@@ -58,8 +58,11 @@ class Model(nn.Module):
         target_coarse = encoded_coarse[:, 1:]
         nll_coarse = F.cross_entropy(out_c_array, target_coarse, reduction="none")
 
-        if self.loss_config.eliminate_silence:
+        silence_weight = self.loss_config.silence_weight
+        if silence_weight == 0:
             nll_coarse = nll_coarse[~silence]
+        elif silence_weight < 0:
+            nll_coarse = nll_coarse[~silence] + nll_coarse[silence] * silence_weight
 
         nll_coarse = (
             torch.mean(nll_coarse)
