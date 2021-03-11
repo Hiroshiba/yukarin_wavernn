@@ -78,10 +78,9 @@ class BaseWaveDataset(Dataset):
 
         l_scale = int(round(sr / l_rate))
 
-        length = len(l_array) * l_scale
-        assert (
-            abs(length - len(wave_data.wave)) < l_scale * 4
-        ), f"{abs(length - len(wave_data.wave))} {l_scale}"
+        length = min(len(l_array) * l_scale, len(wave_data.wave))
+        assert abs(length - len(l_array) * l_scale) < l_scale * 4
+        assert abs(length - len(wave_data.wave)) < l_scale * 4
 
         assert (
             local_padding_size % l_scale == 0
@@ -92,8 +91,8 @@ class BaseWaveDataset(Dataset):
         l_sl = sl // l_scale
 
         for _ in range(10000):
-            if l_length > l_sl:
-                l_offset = numpy.random.randint(l_length - l_sl)
+            if l_length > l_sl + 1:
+                l_offset = numpy.random.randint(l_length - l_sl + 1)
             else:
                 l_offset = 0
             offset = l_offset * l_scale
