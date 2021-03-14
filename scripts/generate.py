@@ -88,6 +88,7 @@ def generate(
     input_batchsize: Optional[int],
     num_test: int,
     sampling_policy: str,
+    disable_fast_inference: bool,
     val_local_glob: str,
     val_speaker_num: Optional[int],
     output_dir: Path,
@@ -114,7 +115,7 @@ def generate(
         predictor=model_path,
         use_gpu=True,
         max_batch_size=batchsize,
-        use_fast_inference=True,
+        use_fast_inference=not disable_fast_inference,
     )
 
     dataset = create_dataset(config.dataset)["test"]
@@ -173,6 +174,7 @@ if __name__ == "__main__":
     parser.add_argument("--input_batchsize", type=int)
     parser.add_argument("--num_test", type=int, default=5)
     parser.add_argument("--sampling_policy", default=SamplingPolicy.random.value)
+    parser.add_argument("--disable_fast_inference", action="store_true")
     parser.add_argument("--val_local_glob")
     parser.add_argument("--val_speaker_num", type=int)
     parser.add_argument("--output_dir", type=Path)
