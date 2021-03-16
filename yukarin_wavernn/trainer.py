@@ -96,6 +96,7 @@ def create_trainer(
     # trainer
     trigger_log = (config.train.log_iteration, "iteration")
     trigger_eval = (config.train.eval_iteration, "iteration")
+    trigger_snapshot = (config.train.snapshot_iteration, "iteration")
     trigger_stop = (
         (config.train.stop_iteration, "iteration")
         if config.train.stop_iteration is not None
@@ -175,6 +176,6 @@ def create_trainer(
         n_retains=1,
         autoload=True,
     )
-    trainer.extend(ext, trigger=trigger_eval)
+    trainer.extend(ext, trigger=trigger_snapshot)
 
     return trainer

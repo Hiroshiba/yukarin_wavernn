@@ -62,6 +62,7 @@ class TrainConfig:
     eval_batchsize: Optional[int]
     log_iteration: int
     eval_iteration: int
+    snapshot_iteration: int
     stop_iteration: int
     optimizer: Dict[str, Any]
     weight_initializer: Optional[str] = None
@@ -150,6 +151,9 @@ def backward_compatible(d: Dict):
 
     if "silence_weight" not in d["loss"]:
         d["loss"]["silence_weight"] = 0
+
+    if "snapshot_iteration" not in d["train"]:
+        d["train"]["snapshot_iteration"] = d["train"]["eval_iteration"]
 
 
 def assert_config(config: Config):
