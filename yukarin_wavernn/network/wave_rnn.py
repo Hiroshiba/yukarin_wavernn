@@ -26,6 +26,7 @@ class WaveRNN(nn.Module):
         bit_size: int,
         conditioning_size: int,
         embedding_size: int,
+        use_wave_mask: bool,
         hidden_size: int,
         linear_hidden_size: int,
         local_size: int,
@@ -86,7 +87,11 @@ class WaveRNN(nn.Module):
         self.local_gru = local_gru
         self.local_encoder = local_encoder
 
-        self.x_embedder = nn.Embedding(self.bins, embedding_size)
+        self.x_embedder = (
+            nn.Embedding(self.bins, embedding_size)
+            if not use_wave_mask
+            else nn.Embedding(self.bins + 1, embedding_size, padding_idx=self.bins)
+        )
 
         in_size = embedding_size + (
             (

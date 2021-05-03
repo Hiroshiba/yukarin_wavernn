@@ -42,6 +42,7 @@ def _create_model(
         bit_size=bit_size,
         conditioning_size=128,
         embedding_size=256,
+        use_wave_mask=False,
         hidden_size=hidden_size,
         linear_hidden_size=512,
         local_size=local_size,
@@ -53,7 +54,7 @@ def _create_model(
     )
 
     loss_config = LossConfig(
-        eliminate_silence=False,
+        silence_weight=0,
         mean_silence=True,
     )
     model = Model(loss_config=loss_config, predictor=network, local_padding_size=0)
@@ -106,11 +107,10 @@ class TestCannotTrainingWaveRNN(unittest.TestCase):
     def _wrapper(self, bit=10, mulaw=False):
         model = _create_model(local_size=0)
         dataset = RandomDataset(
+            sampling_rate=sampling_rate,
             sampling_length=sampling_length,
             bit=bit,
             mulaw=mulaw,
-            local_sampling_rate=None,
-            local_padding_size=0,
         )
 
         updater, reporter = setup_support(batch_size, gpu, model, dataset)
@@ -133,11 +133,10 @@ class TestLocalTrainingWaveRNN(unittest.TestCase):
     def _wrapper(self, bit=10, mulaw=True):
         model = _create_model(local_size=2)
         dataset = LocalRandomDataset(
+            sampling_rate=sampling_rate,
             sampling_length=sampling_length,
             bit=bit,
             mulaw=mulaw,
-            local_sampling_rate=None,
-            local_padding_size=0,
         )
 
         updater, reporter = setup_support(batch_size, gpu, model, dataset)
@@ -165,12 +164,11 @@ class TestDownSampledLocalTrainingWaveRNN(unittest.TestCase):
             local_scale=scale,
         )
         dataset = DownLocalRandomDataset(
+            sampling_rate=sampling_rate,
             sampling_length=sampling_length,
             scale=scale,
             bit=bit,
             mulaw=mulaw,
-            local_sampling_rate=None,
-            local_padding_size=0,
         )
 
         updater, reporter = setup_support(batch_size, gpu, model, dataset)

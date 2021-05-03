@@ -17,6 +17,24 @@ def get_data_directory() -> Path:
 
 
 class RandomDataset(BaseWaveDataset):
+    def __init__(
+        self,
+        sampling_rate: int,
+        sampling_length: int,
+        bit: int,
+        mulaw: bool,
+    ):
+        super().__init__(
+            sampling_rate=sampling_rate,
+            sampling_length=sampling_length,
+            bit=bit,
+            mulaw=mulaw,
+            wave_mask_max_second=0,
+            wave_mask_num=0,
+            local_sampling_rate=None,
+            local_padding_size=0,
+        )
+
     def __len__(self):
         return 100
 
@@ -25,7 +43,7 @@ class RandomDataset(BaseWaveDataset):
         wave = numpy.random.rand(length) * 2 - 1
         local = numpy.empty(shape=(length, 0), dtype=numpy.float32)
         silence = numpy.zeros(shape=(length,), dtype=numpy.bool)
-        return self.convert_to_dict(wave, silence, local)
+        return self.convert_input(wave, silence, local)
 
 
 class LocalRandomDataset(RandomDataset):
@@ -64,13 +82,15 @@ class SignWaveDataset(BaseWaveDataset):
         frequency: float = 440,
     ):
         super().__init__(
+            sampling_rate=sampling_rate,
             sampling_length=sampling_length,
             bit=bit,
             mulaw=mulaw,
+            wave_mask_max_second=0,
+            wave_mask_num=0,
             local_sampling_rate=None,
             local_padding_size=0,
         )
-        self.sampling_rate = sampling_rate
         self.frequency = frequency
 
     def __len__(self):
@@ -87,7 +107,7 @@ class SignWaveDataset(BaseWaveDataset):
         local = numpy.empty(shape=(length, 0), dtype=numpy.float32)
         silence = numpy.zeros(shape=(length,), dtype=numpy.bool)
 
-        d = self.convert_to_dict(wave, silence, local)
+        d = self.convert_input(wave, silence, local)
         return d
 
 

@@ -179,13 +179,16 @@ class TestBaseWaveDataset(unittest.TestCase):
         )
 
         dataset = BaseWaveDataset(
+            sampling_rate=sampling_rate,
             sampling_length=sampling_length,
             bit=10,
             mulaw=False,
+            wave_mask_max_second=0,
+            wave_mask_num=0,
             local_sampling_rate=local_sampling_rate,
             local_padding_size=0,
         )
-        d = dataset.convert_to_dict(wave, silence, local)
+        d = dataset.convert_input(wave, silence, local)
         self.assertEqual(len(d["coarse"]), sampling_length)
         self.assertEqual(len(d["encoded_coarse"]), sampling_length)
         self.assertEqual(len(d["silence"]), sampling_length - 1)
@@ -220,10 +223,12 @@ class TestWavesDataset(unittest.TestCase):
             with self.subTest(mulaw=mulaw):
                 dataset = WavesDataset(
                     self.inputs,
+                    sampling_rate=self.sampling_rate,
                     sampling_length=self.sampling_length,
-                    gaussian_noise_sigma=0,
                     bit=10,
                     mulaw=mulaw,
+                    wave_mask_max_second=0,
+                    wave_mask_num=0,
                     local_sampling_rate=None,
                     local_padding_size=0,
                 )

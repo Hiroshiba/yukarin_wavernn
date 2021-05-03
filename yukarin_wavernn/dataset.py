@@ -38,15 +38,21 @@ class LazyInput:
 class BaseWaveDataset(Dataset):
     def __init__(
         self,
+        sampling_rate: int,
         sampling_length: int,
         bit: int,
         mulaw: bool,
+        wave_mask_max_second: float,
+        wave_mask_num: int,
         local_sampling_rate: Optional[int],
         local_padding_size: int,
     ):
+        self.sampling_rate = sampling_rate
         self.sampling_length = sampling_length
         self.bit = bit
         self.mulaw = mulaw
+        self.wave_mask_max_second = wave_mask_max_second
+        self.wave_mask_num = wave_mask_num
         self.local_sampling_rate = local_sampling_rate
         self.local_padding_size = local_padding_size
 
@@ -127,21 +133,24 @@ class BaseWaveDataset(Dataset):
 
         return wave, silence, local
 
-    @staticmethod
-    def add_noise(wave: numpy.ndarray, gaussian_noise_sigma: float):
-        if gaussian_noise_sigma > 0:
-            wave += numpy.random.normal(0, gaussian_noise_sigma)
-            wave[wave > 1.0] = 1.0
-            wave[wave < -1.0] = -1.0
-        return wave
-
-    def convert_to_dict(
+    def convert_input(
         self, wave: numpy.ndarray, silence: numpy.ndarray, local: numpy.ndarray
     ):
         if self.mulaw:
             wave = encode_mulaw(wave, mu=2 ** self.bit)
         encoded_coarse = encode_single(wave, bit=self.bit)
         coarse = wave.ravel().astype(numpy.float32)
+
+        if self.wave_mask_max_second > 0 and self.wave_mask_num > 0:
+            for _ in range(self.wave_mask_num):
+                mask_length = numpy.random.randint(
+                    int(self.sampling_rate * self.wave_mask_max_second)
+                )
+                mask_offset = numpy.random.randint(
+                    len(encoded_coarse) - mask_length + 1
+                )
+                encoded_coarse[mask_offset : mask_offset + mask_length] = 2 ** self.bit
+
         return dict(
             coarse=coarse,
             encoded_coarse=encoded_coarse,
@@ -154,7 +163,6 @@ class BaseWaveDataset(Dataset):
         wave_data: Wave,
         silence_data: SamplingData,
         local_data: SamplingData,
-        gaussian_noise_sigma: float,
     ):
         wave, silence, local = self.extract_input(
             sampling_length=self.sampling_length,
@@ -164,8 +172,7 @@ class BaseWaveDataset(Dataset):
             local_sampling_rate=self.local_sampling_rate,
             local_padding_size=self.local_padding_size,
         )
-        wave = self.add_noise(wave=wave, gaussian_noise_sigma=gaussian_noise_sigma)
-        d = self.convert_to_dict(wave, silence, local)
+        d = self.convert_input(wave, silence, local)
         return d
 
 
@@ -173,22 +180,26 @@ class WavesDataset(BaseWaveDataset):
     def __init__(
         self,
         inputs: List[Union[Input, LazyInput]],
+        sampling_rate: int,
         sampling_length: int,
         bit: int,
         mulaw: bool,
+        wave_mask_max_second: float,
+        wave_mask_num: int,
         local_sampling_rate: Optional[int],
         local_padding_size: int,
-        gaussian_noise_sigma: float,
     ):
         super().__init__(
+            sampling_rate=sampling_rate,
             sampling_length=sampling_length,
             bit=bit,
             mulaw=mulaw,
+            wave_mask_max_second=wave_mask_max_second,
+            wave_mask_num=wave_mask_num,
             local_sampling_rate=local_sampling_rate,
             local_padding_size=local_padding_size,
         )
         self.inputs = inputs
-        self.gaussian_noise_sigma = gaussian_noise_sigma
 
     def __len__(self):
         return len(self.inputs)
@@ -202,7 +213,6 @@ class WavesDataset(BaseWaveDataset):
             wave_data=input.wave,
             silence_data=input.silence,
             local_data=input.local,
-            gaussian_noise_sigma=self.gaussian_noise_sigma,
         )
 
 
@@ -287,6 +297,7 @@ def create(config: DatasetConfig):
     }
     assert set(fn_list) == set(local_paths.keys())
 
+    speaker_nums: Optional[Dict[str, int]] = None
     if config.speaker_dict_path is not None:
         fn_each_speaker: Dict[str, List[str]] = json.load(
             open(config.speaker_dict_path)
@@ -299,8 +310,6 @@ def create(config: DatasetConfig):
             for fn in fns
         }
         assert set(fn_list).issubset(set(speaker_nums.keys()))
-    else:
-        speaker_nums = None
 
     numpy.random.RandomState(config.seed).shuffle(fn_list)
 
@@ -325,12 +334,14 @@ def create(config: DatasetConfig):
         if not for_evaluate:
             dataset = WavesDataset(
                 inputs=inputs,
+                sampling_rate=config.sampling_rate,
                 sampling_length=config.sampling_length,
                 bit=config.bit_size,
                 mulaw=config.mulaw,
+                wave_mask_max_second=config.wave_mask_max_second,
+                wave_mask_num=config.wave_mask_num,
                 local_sampling_rate=config.local_sampling_rate,
                 local_padding_size=config.local_padding_size,
-                gaussian_noise_sigma=config.gaussian_noise_sigma,
             )
         else:
             dataset = NonEncodeWavesDataset(

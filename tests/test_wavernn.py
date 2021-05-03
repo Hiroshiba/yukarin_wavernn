@@ -73,6 +73,7 @@ class TestWaveRNN(unittest.TestCase):
             bit_size=bit_size,
             conditioning_size=7,
             embedding_size=32,
+            use_wave_mask=False,
             hidden_size=hidden_size,
             linear_hidden_size=11,
             local_size=loal_size,

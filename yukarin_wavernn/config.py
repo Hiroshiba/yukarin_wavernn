@@ -14,8 +14,9 @@ class DatasetConfig:
     input_silence_glob: str
     input_local_glob: str
     bit_size: int
-    gaussian_noise_sigma: float
     mulaw: bool
+    wave_mask_max_second: float
+    wave_mask_num: int
     local_sampling_rate: Optional[int]
     local_padding_size: int
     speaker_dict_path: Optional[str]
@@ -42,6 +43,7 @@ class NetworkConfig:
     local_size: int
     conditioning_size: int
     embedding_size: int
+    use_wave_mask: bool
     linear_hidden_size: int
     local_scale: int
     local_layer_num: int
@@ -103,9 +105,6 @@ class Config:
 
 
 def backward_compatible(d: Dict):
-    if "gaussian_noise_sigma" not in d["dataset"]:
-        d["dataset"]["gaussian_noise_sigma"] = 0.0
-
     if "mulaw" not in d["dataset"]:
         d["dataset"]["mulaw"] = False
 
@@ -155,9 +154,22 @@ def backward_compatible(d: Dict):
     if "snapshot_iteration" not in d["train"]:
         d["train"]["snapshot_iteration"] = d["train"]["eval_iteration"]
 
+    if "use_wave_mask" not in d["network"]:
+        d["network"]["use_wave_mask"] = False
+    if "wave_mask_max_second" not in d["dataset"]:
+        d["dataset"]["wave_mask_max_second"] = 0
+    if "wave_mask_num" not in d["dataset"]:
+        d["dataset"]["wave_mask_num"] = 0
+
+    if "gaussian_noise_sigma" in d["dataset"]:
+        d["dataset"].pop("gaussian_noise_sigma")
+
 
 def assert_config(config: Config):
     assert config.dataset.bit_size == config.network.bit_size
 
     if config.dataset.speaker_dict_path is not None:
         assert config.dataset.num_speaker == config.network.speaker_size
+
+    if config.dataset.wave_mask_max_second > 0 and config.dataset.wave_mask_num > 0:
+        assert config.network.use_wave_mask

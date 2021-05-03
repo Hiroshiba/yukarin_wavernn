@@ -14,6 +14,7 @@ def create_predictor(config: NetworkConfig):
         bit_size=config.bit_size,
         conditioning_size=config.conditioning_size,
         embedding_size=config.embedding_size,
+        use_wave_mask=config.use_wave_mask,
         hidden_size=config.hidden_size,
         linear_hidden_size=config.linear_hidden_size,
         local_size=config.local_size,
