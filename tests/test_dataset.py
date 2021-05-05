@@ -55,6 +55,8 @@ class TestBaseWaveDataset(unittest.TestCase):
                         local_data=local_data,
                         local_sampling_rate=local_sampling_rate,
                         local_padding_size=0,
+                        local_mask_max_second=0,
+                        local_mask_num=0,
                     )
 
                     self.assertEqual(len(wave), sampling_length)
@@ -116,6 +118,8 @@ class TestBaseWaveDataset(unittest.TestCase):
                         local_data=local_data,
                         local_sampling_rate=None,
                         local_padding_size=local_padding_size,
+                        local_mask_max_second=0,
+                        local_mask_num=0,
                         padding_value=numpy.nan,
                     )
 
@@ -176,6 +180,8 @@ class TestBaseWaveDataset(unittest.TestCase):
             local_data=local_data,
             local_sampling_rate=local_sampling_rate,
             local_padding_size=0,
+            local_mask_max_second=0,
+            local_mask_num=0,
         )
 
         dataset = BaseWaveDataset(
@@ -187,6 +193,8 @@ class TestBaseWaveDataset(unittest.TestCase):
             wave_mask_num=0,
             local_sampling_rate=local_sampling_rate,
             local_padding_size=0,
+            local_mask_max_second=0,
+            local_mask_num=0,
         )
         d = dataset.convert_input(wave, silence, local)
         self.assertEqual(len(d["coarse"]), sampling_length)
@@ -231,6 +239,8 @@ class TestWavesDataset(unittest.TestCase):
                     wave_mask_num=0,
                     local_sampling_rate=None,
                     local_padding_size=0,
+                    local_mask_max_second=0,
+                    local_mask_num=0,
                 )
                 for d in dataset:
                     self.assertEqual(len(d["coarse"]), self.sampling_length)

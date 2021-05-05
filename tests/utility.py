@@ -33,6 +33,8 @@ class RandomDataset(BaseWaveDataset):
             wave_mask_num=0,
             local_sampling_rate=None,
             local_padding_size=0,
+            local_mask_max_second=0,
+            local_mask_num=0,
         )
 
     def __len__(self):
@@ -90,6 +92,8 @@ class SignWaveDataset(BaseWaveDataset):
             wave_mask_num=0,
             local_sampling_rate=None,
             local_padding_size=0,
+            local_mask_max_second=0,
+            local_mask_num=0,
         )
         self.frequency = frequency
 

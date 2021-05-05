@@ -46,6 +46,8 @@ class BaseWaveDataset(Dataset):
         wave_mask_num: int,
         local_sampling_rate: Optional[int],
         local_padding_size: int,
+        local_mask_max_second: float,
+        local_mask_num: int,
     ):
         self.sampling_rate = sampling_rate
         self.sampling_length = sampling_length
@@ -55,6 +57,8 @@ class BaseWaveDataset(Dataset):
         self.wave_mask_num = wave_mask_num
         self.local_sampling_rate = local_sampling_rate
         self.local_padding_size = local_padding_size
+        self.local_mask_max_second = local_mask_max_second
+        self.local_mask_num = local_mask_num
 
     @staticmethod
     def extract_input(
@@ -64,6 +68,8 @@ class BaseWaveDataset(Dataset):
         local_data: SamplingData,
         local_sampling_rate: Optional[int],
         local_padding_size: int,
+        local_mask_max_second: float,
+        local_mask_num: int,
         padding_value=0,
     ):
         """
@@ -131,6 +137,12 @@ class BaseWaveDataset(Dataset):
         else:
             local = l_array[l_start:l_end]
 
+        if local_mask_max_second > 0 and local_mask_num > 0:
+            for _ in range(local_mask_num):
+                mask_length = numpy.random.randint(int(l_rate * local_mask_max_second))
+                mask_offset = numpy.random.randint(len(local) - mask_length + 1)
+                local[mask_offset : mask_offset + mask_length] = 0
+
         return wave, silence, local
 
     def convert_input(
@@ -171,6 +183,8 @@ class BaseWaveDataset(Dataset):
             local_data=local_data,
             local_sampling_rate=self.local_sampling_rate,
             local_padding_size=self.local_padding_size,
+            local_mask_max_second=self.local_mask_max_second,
+            local_mask_num=self.local_mask_num,
         )
         d = self.convert_input(wave, silence, local)
         return d
@@ -188,6 +202,8 @@ class WavesDataset(BaseWaveDataset):
         wave_mask_num: int,
         local_sampling_rate: Optional[int],
         local_padding_size: int,
+        local_mask_max_second: float,
+        local_mask_num: int,
     ):
         super().__init__(
             sampling_rate=sampling_rate,
@@ -198,6 +214,8 @@ class WavesDataset(BaseWaveDataset):
             wave_mask_num=wave_mask_num,
             local_sampling_rate=local_sampling_rate,
             local_padding_size=local_padding_size,
+            local_mask_max_second=local_mask_max_second,
+            local_mask_num=local_mask_num,
         )
         self.inputs = inputs
 
@@ -249,6 +267,8 @@ class NonEncodeWavesDataset(Dataset):
             local_data=input.local,
             local_sampling_rate=self.local_sampling_rate,
             local_padding_size=local_padding_size,
+            local_mask_max_second=0,
+            local_mask_num=0,
         )
         return dict(
             wave=wave,
@@ -321,7 +341,7 @@ def create(config: DatasetConfig):
     trains = fn_list[num_test:][:num_train]
     tests = fn_list[:num_test]
 
-    def Dataset(fns, for_evaluate=False):
+    def Dataset(fns, for_test=False, for_evaluate=False):
         inputs = [
             LazyInput(
                 path_wave=wave_paths[fn],
@@ -338,10 +358,12 @@ def create(config: DatasetConfig):
                 sampling_length=config.sampling_length,
                 bit=config.bit_size,
                 mulaw=config.mulaw,
-                wave_mask_max_second=config.wave_mask_max_second,
-                wave_mask_num=config.wave_mask_num,
+                wave_mask_max_second=config.wave_mask_max_second if for_test else 0,
+                wave_mask_num=config.wave_mask_num if for_test else 0,
                 local_sampling_rate=config.local_sampling_rate,
                 local_padding_size=config.local_padding_size,
+                local_mask_max_second=config.local_mask_max_second if for_test else 0,
+                local_mask_num=config.local_mask_num if for_test else 0,
             )
         else:
             dataset = NonEncodeWavesDataset(
@@ -370,7 +392,7 @@ def create(config: DatasetConfig):
 
     return {
         "train": Dataset(trains),
-        "test": Dataset(tests),
+        "test": Dataset(tests, for_test=True),
         "eval": Dataset(tests, for_evaluate=True),
         "valid": valid_dataset,
     }

@@ -19,6 +19,8 @@ class DatasetConfig:
     wave_mask_num: int
     local_sampling_rate: Optional[int]
     local_padding_size: int
+    local_mask_max_second: float
+    local_mask_num: int
     speaker_dict_path: Optional[str]
     num_speaker: Optional[int]
     seed: int
@@ -168,6 +170,11 @@ def backward_compatible(d: Dict):
 
     if "gaussian_noise_sigma" in d["dataset"]:
         d["dataset"].pop("gaussian_noise_sigma")
+
+    if "local_mask_max_second" not in d["dataset"]:
+        d["dataset"]["local_mask_max_second"] = 0
+    if "local_mask_num" not in d["dataset"]:
+        d["dataset"]["local_mask_num"] = 0
 
 
 def assert_config(config: Config):
