@@ -2,7 +2,7 @@ import glob
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Sequence, Union
 
 import numpy
 from acoustic_feature_extractor.data.sampling_data import SamplingData
@@ -219,7 +219,7 @@ class WavesDataset(BaseWaveDataset):
 class NonEncodeWavesDataset(Dataset):
     def __init__(
         self,
-        inputs: List[Union[Input, LazyInput]],
+        inputs: Sequence[Union[Input, LazyInput]],
         time_length: float,
         local_sampling_rate: Optional[int],
         local_padding_time_length: float,
@@ -364,8 +364,57 @@ def create(config: DatasetConfig):
 
         return dataset
 
+    valid_dataset = (
+        create_validation_dataset(config) if config.num_valid is not None else None
+    )
+
     return {
         "train": Dataset(trains),
         "test": Dataset(tests),
         "eval": Dataset(tests, for_evaluate=True),
+        "valid": valid_dataset,
     }
+
+
+def create_validation_dataset(config: DatasetConfig):
+    wave_paths = {
+        Path(p).stem: Path(p) for p in glob.glob(str(config.valid_input_wave_glob))
+    }
+    fn_list = sorted(wave_paths.keys())
+    assert len(fn_list) > 0
+
+    silence_paths = {
+        Path(p).stem: Path(p) for p in glob.glob(str(config.valid_input_silence_glob))
+    }
+    assert set(fn_list) == set(silence_paths.keys())
+
+    local_paths = {
+        Path(p).stem: Path(p) for p in glob.glob(str(config.valid_input_local_glob))
+    }
+    assert set(fn_list) == set(local_paths.keys())
+
+    assert config.speaker_dict_path is None
+
+    numpy.random.RandomState(config.seed).shuffle(fn_list)
+
+    valids = fn_list[: config.num_valid]
+
+    inputs = [
+        LazyInput(
+            path_wave=wave_paths[fn],
+            path_silence=silence_paths[fn],
+            path_local=local_paths[fn],
+        )
+        for fn in valids
+    ]
+
+    dataset = NonEncodeWavesDataset(
+        inputs=inputs,
+        time_length=config.time_length_evaluate,
+        local_sampling_rate=config.local_sampling_rate,
+        local_padding_time_length=config.local_padding_time_length_evaluate,
+    )
+
+    dataset = TensorWrapperDataset(dataset)
+    dataset = ConcatDataset([dataset] * config.num_times_valid)
+    return dataset

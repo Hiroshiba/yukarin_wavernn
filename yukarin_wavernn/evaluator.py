@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Optional
 
+import librosa
 import numpy
 from acoustic_feature_extractor.data.spectrogram import to_melcepstrum
 from acoustic_feature_extractor.data.wave import Wave
@@ -53,6 +54,28 @@ def calc_mcd(
     return _mcd(mc1, mc2)
 
 
+def calc_silence_rate(
+    path1: Optional[Path] = None,
+    path2: Optional[Path] = None,
+    wave1: Optional[Wave] = None,
+    wave2: Optional[Wave] = None,
+):
+    wave1 = Wave.load(path1) if wave1 is None else wave1
+    wave2 = Wave.load(path2) if wave2 is None else wave2
+    assert wave1.sampling_rate == wave2.sampling_rate
+
+    silence1 = ~librosa.effects._signal_to_frame_nonsilent(wave1.wave)
+    silence2 = ~librosa.effects._signal_to_frame_nonsilent(wave2.wave)
+
+    tp = numpy.logical_and(silence1, silence2).sum(dtype=float)
+    tn = numpy.logical_and(~silence1, ~silence2).sum(dtype=float)
+    fn = numpy.logical_and(silence1, ~silence2).sum(dtype=float)
+    fp = numpy.logical_and(~silence1, silence2).sum(dtype=float)
+
+    accuracy = (tp + tn) / (tp + tn + fn + fp)
+    return accuracy
+
+
 class GenerateEvaluator(nn.Module):
     def __init__(
         self,
@@ -84,6 +107,7 @@ class GenerateEvaluator(nn.Module):
         )
 
         mcd_list = []
+        sil_acc_list = []
         for wi, wo in zip(wave.cpu().numpy(), wave_output):
             wi = Wave(wave=wi, sampling_rate=wo.sampling_rate)
 
@@ -94,7 +118,13 @@ class GenerateEvaluator(nn.Module):
             mcd = calc_mcd(wave1=wi, wave2=wo)
             mcd_list.append(mcd)
 
-        scores = {"mcd": (numpy.mean(mcd_list), batchsize)}
+            accuracy = calc_silence_rate(wave1=wi, wave2=wo)
+            sil_acc_list.append(accuracy)
+
+        scores = {
+            "mcd": (numpy.mean(mcd_list), batchsize),
+            "sil_acc": (numpy.mean(sil_acc_list), batchsize),
+        }
 
         report(scores, self)
         return scores

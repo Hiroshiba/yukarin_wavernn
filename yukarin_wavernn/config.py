@@ -27,6 +27,11 @@ class DatasetConfig:
     num_times_evaluate: int
     time_length_evaluate: float
     local_padding_time_length_evaluate: float
+    valid_input_wave_glob: Optional[str] = None
+    valid_input_silence_glob: Optional[str] = None
+    valid_input_local_glob: Optional[str] = None
+    num_times_valid: Optional[int] = None
+    num_valid: Optional[int] = None
 
 
 class LocalNetworkType(str, Enum):
