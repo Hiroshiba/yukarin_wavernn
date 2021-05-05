@@ -153,22 +153,31 @@ class BaseWaveDataset(Dataset):
         encoded_coarse = encode_single(wave, bit=self.bit)
         coarse = wave.ravel().astype(numpy.float32)
 
+        masked_encoded_coarse: Optional[numpy.ndarray] = None
         if self.wave_mask_max_second > 0 and self.wave_mask_num > 0:
+            masked_encoded_coarse = encoded_coarse.copy()
             for _ in range(self.wave_mask_num):
                 mask_length = numpy.random.randint(
                     int(self.sampling_rate * self.wave_mask_max_second)
                 )
                 mask_offset = numpy.random.randint(
-                    len(encoded_coarse) - mask_length + 1
+                    len(masked_encoded_coarse) - mask_length + 1
                 )
-                encoded_coarse[mask_offset : mask_offset + mask_length] = 2 ** self.bit
+                masked_encoded_coarse[mask_offset : mask_offset + mask_length] = (
+                    2 ** self.bit
+                )
 
-        return dict(
+        d = dict(
             coarse=coarse,
             encoded_coarse=encoded_coarse,
             local=local,
             silence=silence[1:],
         )
+
+        if masked_encoded_coarse is not None:
+            d["masked_encoded_coarse"] = masked_encoded_coarse
+
+        return d
 
     def make_input(
         self,

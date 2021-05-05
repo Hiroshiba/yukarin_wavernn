@@ -45,9 +45,12 @@ class Model(nn.Module):
         encoded_coarse: Tensor,
         local: Tensor,
         silence: Tensor,
+        masked_encoded_coarse: Optional[Tensor] = None,
         speaker_num: Optional[Tensor] = None,
     ):
-        x_array = encoded_coarse
+        x_array = (
+            encoded_coarse if masked_encoded_coarse is None else masked_encoded_coarse
+        )
 
         out_c_array, _ = self.predictor(
             x_array=x_array,
