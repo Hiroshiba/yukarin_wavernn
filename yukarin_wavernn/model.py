@@ -14,7 +14,6 @@ def create_predictor(config: NetworkConfig):
         bit_size=config.bit_size,
         conditioning_size=config.conditioning_size,
         embedding_size=config.embedding_size,
-        use_wave_mask=config.use_wave_mask,
         hidden_size=config.hidden_size,
         linear_hidden_size=config.linear_hidden_size,
         local_size=config.local_size,
@@ -45,11 +44,13 @@ class Model(nn.Module):
         encoded_coarse: Tensor,
         local: Tensor,
         silence: Tensor,
-        masked_encoded_coarse: Optional[Tensor] = None,
+        randomed_encoded_coarse: Optional[Tensor] = None,
         speaker_num: Optional[Tensor] = None,
     ):
         x_array = (
-            encoded_coarse if masked_encoded_coarse is None else masked_encoded_coarse
+            encoded_coarse
+            if randomed_encoded_coarse is None
+            else randomed_encoded_coarse
         )
 
         out_c_array, _ = self.predictor(

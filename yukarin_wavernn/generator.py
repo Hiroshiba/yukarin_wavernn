@@ -60,7 +60,7 @@ class Generator(object):
         self.device = torch.device("cuda") if use_gpu else torch.device("cpu")
 
         if isinstance(predictor, Path):
-            state_dict = torch.load(predictor)
+            state_dict = torch.load(predictor, map_location=self.device)
             predictor = create_predictor(config.network)
             predictor.load_state_dict(state_dict)
         self.predictor = predictor.eval().to(self.device)

@@ -15,8 +15,8 @@ class DatasetConfig:
     input_local_glob: str
     bit_size: int
     mulaw: bool
-    wave_mask_max_second: float
-    wave_mask_num: int
+    wave_random_max_second: float
+    wave_random_num: int
     local_sampling_rate: Optional[int]
     local_padding_size: int
     local_mask_max_second: float
@@ -50,7 +50,6 @@ class NetworkConfig:
     local_size: int
     conditioning_size: int
     embedding_size: int
-    use_wave_mask: bool
     linear_hidden_size: int
     local_scale: int
     local_layer_num: int
@@ -161,13 +160,6 @@ def backward_compatible(d: Dict):
     if "snapshot_iteration" not in d["train"]:
         d["train"]["snapshot_iteration"] = d["train"]["eval_iteration"]
 
-    if "use_wave_mask" not in d["network"]:
-        d["network"]["use_wave_mask"] = False
-    if "wave_mask_max_second" not in d["dataset"]:
-        d["dataset"]["wave_mask_max_second"] = 0
-    if "wave_mask_num" not in d["dataset"]:
-        d["dataset"]["wave_mask_num"] = 0
-
     if "gaussian_noise_sigma" in d["dataset"]:
         d["dataset"].pop("gaussian_noise_sigma")
 
@@ -176,12 +168,21 @@ def backward_compatible(d: Dict):
     if "local_mask_num" not in d["dataset"]:
         d["dataset"]["local_mask_num"] = 0
 
+    if "use_wave_mask" in d["network"]:
+        d["network"].pop("use_wave_mask")
+    if "wave_mask_max_second" in d["dataset"]:
+        d["dataset"].pop("wave_mask_max_second")
+    if "wave_mask_num" in d["dataset"]:
+        d["dataset"].pop("wave_mask_num")
+
+    if "wave_random_max_second" not in d["dataset"]:
+        d["dataset"]["wave_random_max_second"] = 0
+    if "wave_random_num" not in d["dataset"]:
+        d["dataset"]["wave_random_num"] = 0
+
 
 def assert_config(config: Config):
     assert config.dataset.bit_size == config.network.bit_size
 
     if config.dataset.speaker_dict_path is not None:
         assert config.dataset.num_speaker == config.network.speaker_size
-
-    if config.dataset.wave_mask_max_second > 0 and config.dataset.wave_mask_num > 0:
-        assert config.network.use_wave_mask

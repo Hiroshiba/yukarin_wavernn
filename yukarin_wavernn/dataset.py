@@ -42,8 +42,8 @@ class BaseWaveDataset(Dataset):
         sampling_length: int,
         bit: int,
         mulaw: bool,
-        wave_mask_max_second: float,
-        wave_mask_num: int,
+        wave_random_max_second: float,
+        wave_random_num: int,
         local_sampling_rate: Optional[int],
         local_padding_size: int,
         local_mask_max_second: float,
@@ -53,8 +53,8 @@ class BaseWaveDataset(Dataset):
         self.sampling_length = sampling_length
         self.bit = bit
         self.mulaw = mulaw
-        self.wave_mask_max_second = wave_mask_max_second
-        self.wave_mask_num = wave_mask_num
+        self.wave_random_max_second = wave_random_max_second
+        self.wave_random_num = wave_random_num
         self.local_sampling_rate = local_sampling_rate
         self.local_padding_size = local_padding_size
         self.local_mask_max_second = local_mask_max_second
@@ -153,19 +153,19 @@ class BaseWaveDataset(Dataset):
         encoded_coarse = encode_single(wave, bit=self.bit)
         coarse = wave.ravel().astype(numpy.float32)
 
-        masked_encoded_coarse: Optional[numpy.ndarray] = None
-        if self.wave_mask_max_second > 0 and self.wave_mask_num > 0:
-            masked_encoded_coarse = encoded_coarse.copy()
-            for _ in range(self.wave_mask_num):
+        randomed_encoded_coarse: Optional[numpy.ndarray] = None
+        if self.wave_random_max_second > 0 and self.wave_random_num > 0:
+            randomed_encoded_coarse = encoded_coarse.copy()
+            for _ in range(self.wave_random_num):
                 mask_length = numpy.random.randint(
-                    int(self.sampling_rate * self.wave_mask_max_second)
+                    int(self.sampling_rate * self.wave_random_max_second)
                 )
                 mask_offset = numpy.random.randint(
-                    len(masked_encoded_coarse) - mask_length + 1
+                    len(randomed_encoded_coarse) - mask_length + 1
                 )
-                masked_encoded_coarse[mask_offset : mask_offset + mask_length] = (
-                    2 ** self.bit
-                )
+                randomed_encoded_coarse[mask_offset:][
+                    :mask_length
+                ] = numpy.random.randint(2 ** self.bit, size=mask_length)
 
         d = dict(
             coarse=coarse,
@@ -174,8 +174,8 @@ class BaseWaveDataset(Dataset):
             silence=silence[1:],
         )
 
-        if masked_encoded_coarse is not None:
-            d["masked_encoded_coarse"] = masked_encoded_coarse
+        if randomed_encoded_coarse is not None:
+            d["randomed_encoded_coarse"] = randomed_encoded_coarse
 
         return d
 
@@ -207,8 +207,8 @@ class WavesDataset(BaseWaveDataset):
         sampling_length: int,
         bit: int,
         mulaw: bool,
-        wave_mask_max_second: float,
-        wave_mask_num: int,
+        wave_random_max_second: float,
+        wave_random_num: int,
         local_sampling_rate: Optional[int],
         local_padding_size: int,
         local_mask_max_second: float,
@@ -219,8 +219,8 @@ class WavesDataset(BaseWaveDataset):
             sampling_length=sampling_length,
             bit=bit,
             mulaw=mulaw,
-            wave_mask_max_second=wave_mask_max_second,
-            wave_mask_num=wave_mask_num,
+            wave_random_max_second=wave_random_max_second,
+            wave_random_num=wave_random_num,
             local_sampling_rate=local_sampling_rate,
             local_padding_size=local_padding_size,
             local_mask_max_second=local_mask_max_second,
@@ -367,8 +367,8 @@ def create(config: DatasetConfig):
                 sampling_length=config.sampling_length,
                 bit=config.bit_size,
                 mulaw=config.mulaw,
-                wave_mask_max_second=config.wave_mask_max_second if for_test else 0,
-                wave_mask_num=config.wave_mask_num if for_test else 0,
+                wave_random_max_second=config.wave_random_max_second if for_test else 0,
+                wave_random_num=config.wave_random_num if for_test else 0,
                 local_sampling_rate=config.local_sampling_rate,
                 local_padding_size=config.local_padding_size,
                 local_mask_max_second=config.local_mask_max_second if for_test else 0,

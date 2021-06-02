@@ -8,5 +8,5 @@ pyyaml
 retry
 tensorboardX
 wandb
-git+https://github.com/Hiroshiba/pytorch-trainer@1.3.1
-git+https://github.com/Hiroshiba/acoustic_feature_extractor@db621adef6ef3899e113d34a890b55df75182bc2
+git+https://github.com/Hiroshiba/pytorch-trainer@1.3.2
+git+https://github.com/Hiroshiba/acoustic_feature_extractor

@@ -42,7 +42,6 @@ def _create_model(
         bit_size=bit_size,
         conditioning_size=128,
         embedding_size=256,
-        use_wave_mask=False,
         hidden_size=hidden_size,
         linear_hidden_size=512,
         local_size=local_size,
