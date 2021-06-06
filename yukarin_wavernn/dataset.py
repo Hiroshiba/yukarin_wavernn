@@ -367,12 +367,12 @@ def create(config: DatasetConfig):
                 sampling_length=config.sampling_length,
                 bit=config.bit_size,
                 mulaw=config.mulaw,
-                wave_random_max_second=config.wave_random_max_second if for_test else 0,
-                wave_random_num=config.wave_random_num if for_test else 0,
+                wave_random_max_second=config.wave_random_max_second * (not for_test),
+                wave_random_num=config.wave_random_num * (not for_test),
                 local_sampling_rate=config.local_sampling_rate,
                 local_padding_size=config.local_padding_size,
-                local_mask_max_second=config.local_mask_max_second if for_test else 0,
-                local_mask_num=config.local_mask_num if for_test else 0,
+                local_mask_max_second=config.local_mask_max_second * (not for_test),
+                local_mask_num=config.local_mask_num * (not for_test),
             )
         else:
             dataset = NonEncodeWavesDataset(
