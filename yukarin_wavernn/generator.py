@@ -4,6 +4,7 @@ from typing import Any, Sequence, Union
 
 import numpy
 import torch
+import torch.nn.functional as F
 from acoustic_feature_extractor.data.wave import Wave
 from torch import Tensor
 from tqdm import tqdm
@@ -21,6 +22,7 @@ from yukarin_wavernn.network.wave_rnn import WaveRNN
 
 class SamplingPolicy(str, Enum):
     random = "random"
+    corrected_random = "corrected_random"
     maximum = "maximum"
     # mix = "mix"
 
@@ -94,6 +96,7 @@ class Generator(object):
         local_array: Union[numpy.ndarray, Tensor] = None,
         speaker_nums: Union[Sequence[int], Tensor] = None,
     ):
+        assert num_generate <= self.max_batch_size
         assert local_array is None or len(local_array) == num_generate
         assert speaker_nums is None or len(speaker_nums) == num_generate
 
@@ -110,110 +113,6 @@ class Generator(object):
         else:
             s_one = None
 
-        return self.main_forward(
-            length=length,
-            sampling_policy=sampling_policy,
-            num_generate=num_generate,
-            local_array=local_array,
-            s_one=s_one,
-        )
-
-    def morphing(
-        self,
-        time_length: float,
-        sampling_policy: SamplingPolicy,
-        morphing_policy: MorphingPolicy,
-        local_array1: Union[numpy.ndarray, Tensor],
-        local_array2: Union[numpy.ndarray, Tensor],
-        speaker_nums1: Sequence[int],
-        speaker_nums2: Sequence[int],
-        start_rates: Sequence[float],
-        stop_rates: Sequence[float],
-    ):
-        raise NotImplementedError
-
-        num_generate = len(local_array1)
-        assert len(local_array2) == num_generate
-        assert len(speaker_nums1) == num_generate
-        assert len(speaker_nums2) == num_generate
-        assert len(start_rates) == num_generate
-        assert len(stop_rates) == num_generate
-
-        length = int(self.sampling_rate * time_length)
-        local_length = local_array1.shape[1]
-
-        local_array1 = to_tensor(local_array1)
-        local_array2 = to_tensor(local_array2)
-
-        speaker_nums1 = to_tensor(numpy.asarray(speaker_nums1)).reshape((-1,))
-        speaker_nums2 = to_tensor(numpy.asarray(speaker_nums2)).reshape((-1,))
-        with torch.no_grad():
-            s_one1 = numpy.repeat(
-                self.predictor.forward_speaker(speaker_nums1)[:, None],
-                local_length,
-                axis=1,
-            )
-            s_one2 = numpy.repeat(
-                self.predictor.forward_speaker(speaker_nums2)[:, None],
-                local_length,
-                axis=1,
-            )
-
-        # morphing
-        start_rates = numpy.asarray(start_rates)
-        stop_rates = numpy.asarray(stop_rates)
-        morph_rates = to_tensor(
-            numpy.linspace(
-                start_rates,
-                stop_rates,
-                num=local_length,
-                axis=1,
-                dtype=numpy.float32,
-            )
-        ).reshape((num_generate, local_length, 1))
-
-        local_array = local_array1 * morph_rates + local_array2 * (1 - morph_rates)
-
-        if morphing_policy == MorphingPolicy.linear:
-            s_one = s_one1 * morph_rates + s_one2 * (1 - morph_rates)
-        elif morphing_policy == MorphingPolicy.sphere:
-            omega = numpy.arccos(
-                numpy.sum(
-                    (s_one1 * s_one2)
-                    / (
-                        numpy.linalg.norm(s_one1, axis=2, keepdims=True)
-                        * numpy.linalg.norm(s_one2, axis=2, keepdims=True)
-                    ),
-                    axis=2,
-                    keepdims=True,
-                )
-            )
-            sin_omega = numpy.sin(omega)
-            s_one = (
-                numpy.sin(morph_rates * omega) / sin_omega * s_one1
-                + numpy.sin((1.0 - morph_rates) * omega) / sin_omega * s_one2
-            ).astype(numpy.float32)
-        else:
-            raise ValueError(morphing_policy)
-
-        return self.main_forward(
-            length=length,
-            sampling_policy=sampling_policy,
-            num_generate=num_generate,
-            local_array=local_array,
-            s_one=s_one,
-        )
-
-    def main_forward(
-        self,
-        length: int,
-        sampling_policy: SamplingPolicy,
-        num_generate: int,
-        local_array: Tensor,
-        s_one: Tensor = None,
-    ):
-        assert num_generate <= self.max_batch_size
-
         if self.predictor.with_local:
             with torch.no_grad():
                 local_array = self.predictor.forward_encode(
@@ -228,8 +127,16 @@ class Generator(object):
             dtype=numpy.float32,
         )
 
+        if sampling_policy == SamplingPolicy.corrected_random:
+            low_probability_threshold = -18
+        else:
+            low_probability_threshold = -999
+
         if self.use_fast_inference and self.use_gpu:
-            assert sampling_policy == SamplingPolicy.random
+            assert sampling_policy in [
+                SamplingPolicy.random,
+                SamplingPolicy.corrected_random,
+            ]
 
             import yukarin_autoreg_cpp
 
@@ -241,6 +148,7 @@ class Generator(object):
                 x=x.astype(numpy.int32),
                 l_array=to_numpy(local_array.transpose(0, 1)),
                 hidden=to_numpy(hidden),
+                low_probability_threshold=low_probability_threshold,
             )
 
         elif self.use_fast_inference and not self.use_gpu:
@@ -252,32 +160,38 @@ class Generator(object):
                 x=x,
                 l_array=local_array.numpy(),
                 h=hidden,
+                low_probability_threshold=low_probability_threshold,
                 **params,
             )
             wave = numpy.stack(x_list)
         else:
-            x = to_tensor(x).to(self.device)
-            hidden = to_tensor(hidden).to(self.device)
-            x_list = []
-            for i in tqdm(range(length), desc="generate"):
-                with torch.no_grad():
-                    x, hidden = self.predictor.forward_one(
-                        prev_x=x,
-                        prev_l=local_array[:, i],
-                        hidden=hidden,
+            with torch.no_grad():
+                x = to_tensor(x).to(self.device)
+                x_max = x
+                hidden = to_tensor(hidden).to(self.device)
+                x_list = []
+                for i in tqdm(range(length), desc="generate"):
+                    d_max, _ = self.predictor.forward_one(
+                        prev_x=x_max, prev_l=local_array[:, i], hidden=hidden
+                    )
+                    d, hidden = self.predictor.forward_one(
+                        prev_x=x, prev_l=local_array[:, i], hidden=hidden
                     )
 
-                if sampling_policy == SamplingPolicy.random:
-                    is_random = True
-                elif sampling_policy == SamplingPolicy.maximum:
-                    is_random = False
-                else:
-                    raise ValueError(sampling_policy)
+                    if sampling_policy == SamplingPolicy.maximum:
+                        is_random = False
+                    else:
+                        is_random = True
+                        d[
+                            F.log_softmax(d_max.double(), dim=1)
+                            < low_probability_threshold
+                        ] -= 200
 
-                x = self.predictor.sampling(x, maximum=not is_random)
-                x_list.append(x)
+                    x = self.predictor.sampling(d, maximum=not is_random)
+                    x_max = self.predictor.sampling(d, maximum=True)
+                    x_list.append(x)
 
-            wave = torch.stack(x_list).cpu().numpy()
+                wave = torch.stack(x_list).cpu().numpy()
 
         wave = wave.T
         wave = decode_single(wave, bit=self.bit_size)

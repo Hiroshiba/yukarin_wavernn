@@ -178,6 +178,7 @@ def fast_generate(
     O1_b: numpy.ndarray,
     O2_W: numpy.ndarray,
     O2_b: numpy.ndarray,
+    low_probability_threshold: float,
 ):
     batchsize = len(x)
     w_gru_x = numpy.empty((batchsize, len(gru_xb)), dtype=h.dtype)
@@ -206,6 +207,7 @@ def fast_generate(
             w_out_x2=w_out_x2,
         )
         dist = d.astype(numpy.float64)
+        dist[dist < low_probability_threshold] -= 200
 
         dist -= _max_axis1_keepdims(dist)
         numpy.exp(dist, dist)
