@@ -135,7 +135,6 @@ class Generator(object):
         if self.use_fast_inference and self.use_gpu:
             assert sampling_policy in [
                 SamplingPolicy.random,
-                SamplingPolicy.corrected_random,
             ]
 
             import yukarin_autoreg_cpp
