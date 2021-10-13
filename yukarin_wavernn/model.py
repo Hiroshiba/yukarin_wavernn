@@ -5,25 +5,8 @@ import torch.nn.functional as F
 from pytorch_trainer import report
 from torch import Tensor, nn
 
-from yukarin_wavernn.config import LossConfig, NetworkConfig
+from yukarin_wavernn.config import LossConfig
 from yukarin_wavernn.network.wave_rnn import WaveRNN
-
-
-def create_predictor(config: NetworkConfig):
-    predictor = WaveRNN(
-        bit_size=config.bit_size,
-        conditioning_size=config.conditioning_size,
-        embedding_size=config.embedding_size,
-        hidden_size=config.hidden_size,
-        linear_hidden_size=config.linear_hidden_size,
-        local_size=config.local_size,
-        local_scale=config.local_scale,
-        local_layer_num=config.local_layer_num,
-        local_network_type=config.local_network_type,
-        speaker_size=config.speaker_size,
-        speaker_embedding_size=config.speaker_embedding_size,
-    )
-    return predictor
 
 
 class Model(nn.Module):

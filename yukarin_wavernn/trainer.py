@@ -17,7 +17,8 @@ from yukarin_wavernn.config import Config, assert_config
 from yukarin_wavernn.dataset import create as create_dataset
 from yukarin_wavernn.evaluator import GenerateEvaluator
 from yukarin_wavernn.generator import Generator
-from yukarin_wavernn.model import Model, create_predictor
+from yukarin_wavernn.model import Model
+from yukarin_wavernn.network.wave_rnn import create_predictor
 from yukarin_wavernn.utility.pytorch_utility import AmpUpdater, init_weights
 from yukarin_wavernn.utility.trainer_extension import TensorboardReport, WandbReport
 from yukarin_wavernn.utility.trainer_utility import LowValueTrigger, create_iterator

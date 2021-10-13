@@ -4,7 +4,7 @@ import numpy
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
-from yukarin_wavernn.config import LocalNetworkType
+from yukarin_wavernn.config import LocalNetworkType, NetworkConfig
 from yukarin_wavernn.network.local_encoder import (
     ResidualBottleneckDilatedCNN,
     ResidualBottleneckDilatedCNNBN,
@@ -289,3 +289,20 @@ class WaveRNN(nn.Module):
             )
             sampled = torch.argmax(prob + rand, dim=1)
         return sampled
+
+
+def create_predictor(config: NetworkConfig):
+    predictor = WaveRNN(
+        bit_size=config.bit_size,
+        conditioning_size=config.conditioning_size,
+        embedding_size=config.embedding_size,
+        hidden_size=config.hidden_size,
+        linear_hidden_size=config.linear_hidden_size,
+        local_size=config.local_size,
+        local_scale=config.local_scale,
+        local_layer_num=config.local_layer_num,
+        local_network_type=LocalNetworkType(config.local_network_type),
+        speaker_size=config.speaker_size,
+        speaker_embedding_size=config.speaker_embedding_size,
+    )
+    return predictor

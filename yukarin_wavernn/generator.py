@@ -11,13 +11,12 @@ from tqdm import tqdm
 
 from yukarin_wavernn.config import Config
 from yukarin_wavernn.data import decode_mulaw, decode_single, encode_single
-from yukarin_wavernn.model import create_predictor
 from yukarin_wavernn.network.fast_forward import (
     fast_generate,
     get_fast_forward_params,
     to_numpy,
 )
-from yukarin_wavernn.network.wave_rnn import WaveRNN
+from yukarin_wavernn.network.wave_rnn import WaveRNN, create_predictor
 
 
 class SamplingPolicy(str, Enum):

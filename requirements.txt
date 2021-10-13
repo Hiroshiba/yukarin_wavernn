@@ -3,10 +3,6 @@ numpy
 torch
 tqdm
 parameterized
-pytest
 pyyaml
 retry
-tensorboardX
-wandb
-git+https://github.com/Hiroshiba/pytorch-trainer@1.3.2
 git+https://github.com/Hiroshiba/acoustic_feature_extractor

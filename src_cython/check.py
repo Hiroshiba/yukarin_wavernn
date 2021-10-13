@@ -3,8 +3,8 @@ import torch
 import yukarin_autoreg_cpp
 from torch import Tensor
 from yukarin_wavernn.config import LocalNetworkType, NetworkConfig
-from yukarin_wavernn.model import create_predictor
 from yukarin_wavernn.network.fast_forward import fast_generate, get_fast_forward_params
+from yukarin_wavernn.network.wave_rnn import create_predictor
 
 max_batch_size = 4
 graph_length = 1000
