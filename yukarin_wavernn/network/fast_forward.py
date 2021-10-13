@@ -1,6 +1,6 @@
 import numpy
 from numba import njit
-from torch.tensor import Tensor
+from torch import Tensor
 from yukarin_wavernn.network.wave_rnn import WaveRNN
 
 
