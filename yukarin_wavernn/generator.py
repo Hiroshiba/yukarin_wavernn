@@ -146,7 +146,6 @@ class Generator(object):
                 x=x.astype(numpy.int32),
                 l_array=to_numpy(local_array.transpose(0, 1)),
                 hidden=to_numpy(hidden),
-                low_probability_threshold=low_probability_threshold,
             )
 
         elif self.use_fast_inference and not self.use_gpu:
@@ -158,7 +157,6 @@ class Generator(object):
                 x=x,
                 l_array=local_array.numpy(),
                 h=hidden,
-                low_probability_threshold=low_probability_threshold,
                 **params,
             )
             wave = numpy.stack(x_list)
