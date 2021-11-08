@@ -33,4 +33,5 @@ RUN pip install llvmlite cython --ignore-installed
 
 # install requirements
 COPY requirements.txt /app/
-RUN pip install -r <(cat requirements.txt | grep -v -x 'torch')
+COPY requirements_dev.txt /app/
+RUN pip install -r <(cat requirements.txt | grep -v -x 'torch') -r requirements_dev.txt
