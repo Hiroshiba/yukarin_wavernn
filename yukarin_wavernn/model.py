@@ -27,9 +27,9 @@ class Model(nn.Module):
             count = torch.from_numpy(
                 numpy.load(loss_config.class_count_path).astype(numpy.int64)
             )
-            self.cbl_weight = (
-                (1 - loss_config.cbl_beta) / (1 - loss_config.cbl_beta ** count)
-            ).to(predictor.O1.weight.device)
+            self.cbl_weight = (1 - loss_config.cbl_beta) / (
+                1 - loss_config.cbl_beta ** count
+            )
 
     def __call__(
         self,
@@ -53,11 +53,14 @@ class Model(nn.Module):
             local_padding_size=self.local_padding_size,
         )
 
-        target_coarse = encoded_coarse[:, 1:]
-        nll_coarse = F.cross_entropy(out_c_array, target_coarse, reduction="none")
-
         if self.cbl_weight is not None:
-            nll_coarse = nll_coarse * self.cbl_weight.reshape(1, 1, -1)
+            if self.cbl_weight.device != out_c_array.device:
+                self.cbl_weight = self.cbl_weight.to(out_c_array.device)
+
+        target_coarse = encoded_coarse[:, 1:]
+        nll_coarse = F.cross_entropy(
+            out_c_array, target_coarse, reduction="none", weight=self.cbl_weight
+        )
 
         silence_weight = self.loss_config.silence_weight
         if silence_weight == 0:
