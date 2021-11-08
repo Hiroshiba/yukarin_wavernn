@@ -1,5 +1,6 @@
 from typing import Optional
 
+import numpy
 import torch
 import torch.nn.functional as F
 from pytorch_trainer import report
@@ -20,6 +21,15 @@ class Model(nn.Module):
         self.loss_config = loss_config
         self.predictor = predictor
         self.local_padding_size = local_padding_size
+
+        self.cbl_weight: Optional[Tensor] = None  # Class-Balanced Loss
+        if loss_config.cbl_beta is not None:
+            count = torch.from_numpy(
+                numpy.load(loss_config.class_count_path).astype(numpy.int64)
+            )
+            self.cbl_weight = (
+                (1 - loss_config.cbl_beta) / (1 - loss_config.cbl_beta ** count)
+            ).to(predictor.O1.weight.device)
 
     def __call__(
         self,
@@ -45,6 +55,9 @@ class Model(nn.Module):
 
         target_coarse = encoded_coarse[:, 1:]
         nll_coarse = F.cross_entropy(out_c_array, target_coarse, reduction="none")
+
+        if self.cbl_weight is not None:
+            nll_coarse = nll_coarse * self.cbl_weight.reshape(1, 1, -1)
 
         silence_weight = self.loss_config.silence_weight
         if silence_weight == 0:

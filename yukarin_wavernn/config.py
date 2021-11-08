@@ -17,6 +17,7 @@ class DatasetConfig:
     mulaw: bool
     wave_random_max_second: float
     wave_random_num: int
+    gaussian_noise_sigma: float
     local_sampling_rate: Optional[int]
     local_padding_size: int
     local_mask_max_second: float
@@ -62,6 +63,8 @@ class NetworkConfig:
 class LossConfig:
     silence_weight: float
     mean_silence: bool
+    class_count_path: Optional[str]
+    cbl_beta: Optional[float]  # Class-Balanced Loss の β
 
 
 @dataclass
@@ -160,9 +163,6 @@ def backward_compatible(d: Dict):
     if "snapshot_iteration" not in d["train"]:
         d["train"]["snapshot_iteration"] = d["train"]["eval_iteration"]
 
-    if "gaussian_noise_sigma" in d["dataset"]:
-        d["dataset"].pop("gaussian_noise_sigma")
-
     if "local_mask_max_second" not in d["dataset"]:
         d["dataset"]["local_mask_max_second"] = 0
     if "local_mask_num" not in d["dataset"]:
@@ -179,6 +179,14 @@ def backward_compatible(d: Dict):
         d["dataset"]["wave_random_max_second"] = 0
     if "wave_random_num" not in d["dataset"]:
         d["dataset"]["wave_random_num"] = 0
+
+    if "gaussian_noise_sigma" not in d["dataset"]:
+        d["dataset"]["gaussian_noise_sigma"] = 0
+
+    if "class_count_path" not in d["loss"]:
+        d["loss"]["class_count_path"] = None
+    if "cbl_beta" not in d["loss"]:
+        d["loss"]["cbl_beta"] = None
 
 
 def assert_config(config: Config):

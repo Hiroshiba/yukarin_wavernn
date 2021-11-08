@@ -44,6 +44,7 @@ class BaseWaveDataset(Dataset):
         mulaw: bool,
         wave_random_max_second: float,
         wave_random_num: int,
+        gaussian_noise_sigma: float,
         local_sampling_rate: Optional[int],
         local_padding_size: int,
         local_mask_max_second: float,
@@ -55,6 +56,7 @@ class BaseWaveDataset(Dataset):
         self.mulaw = mulaw
         self.wave_random_max_second = wave_random_max_second
         self.wave_random_num = wave_random_num
+        self.gaussian_noise_sigma = gaussian_noise_sigma
         self.local_sampling_rate = local_sampling_rate
         self.local_padding_size = local_padding_size
         self.local_mask_max_second = local_mask_max_second
@@ -148,6 +150,9 @@ class BaseWaveDataset(Dataset):
     def convert_input(
         self, wave: numpy.ndarray, silence: numpy.ndarray, local: numpy.ndarray
     ):
+        if self.gaussian_noise_sigma > 0:
+            wave += numpy.random.randn(*wave.shape) * self.gaussian_noise_sigma
+
         if self.mulaw:
             wave = encode_mulaw(wave, mu=2 ** self.bit)
         encoded_coarse = encode_single(wave, bit=self.bit)
