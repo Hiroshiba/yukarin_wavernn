@@ -83,6 +83,7 @@ class TrainConfig:
     linear_shift: Optional[Dict[str, Any]] = None
     step_shift: Optional[Dict[str, Any]] = None
     optuna: Optional[Dict[str, Any]] = None
+    gru_pruning: Optional[Dict[str, Any]] = None
 
 
 @dataclass

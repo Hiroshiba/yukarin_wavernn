@@ -19,6 +19,7 @@ from yukarin_wavernn.evaluator import GenerateEvaluator
 from yukarin_wavernn.generator import Generator
 from yukarin_wavernn.model import Model
 from yukarin_wavernn.network.wave_rnn import create_predictor
+from yukarin_wavernn.pruning_extension import PruningExtension
 from yukarin_wavernn.utility.pytorch_utility import AmpUpdater, init_weights
 from yukarin_wavernn.utility.trainer_extension import TensorboardReport, WandbReport
 from yukarin_wavernn.utility.trainer_utility import LowValueTrigger, create_iterator
@@ -117,6 +118,19 @@ def create_trainer(
         shift_ext = extensions.StepShift(**config.train.step_shift)
     if shift_ext is not None:
         trainer.extend(shift_ext)
+
+    if config.train.gru_pruning is not None:
+        c = copy(config.train.gru_pruning)
+        if "ignore" not in c or not c.pop("ignore"):
+            densities = c.pop("densities")
+            weight: torch.Tensor = model.predictor.gru.weight_hh_l0
+            for i in range(3):
+                ext = PruningExtension(
+                    weight=weight[i * weight.shape[1] : (i + 1) * weight.shape[1]],
+                    density=densities[i],
+                    **c,
+                )
+                trainer.extend(ext)
 
     ext = extensions.Evaluator(test_iter, model, device=device)
     trainer.extend(ext, name="test", trigger=trigger_log)
