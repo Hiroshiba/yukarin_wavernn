@@ -20,15 +20,20 @@ from yukarin_wavernn.data import encode_mulaw, encode_single
 
 
 def _process(path: Path, bit: int, gaussian_noise_sigma: float):
-    wave = Wave.load(path).wave
+    try:
+        wave = Wave.load(path).wave
+        assert wave.min() >= -1.0 and wave.max() <= 1.0
 
-    if gaussian_noise_sigma > 0:
-        wave += numpy.random.randn(*wave.shape) * gaussian_noise_sigma
+        if gaussian_noise_sigma > 0:
+            wave += numpy.random.randn(*wave.shape) * gaussian_noise_sigma
 
-    encoded = encode_single(encode_mulaw(wave, mu=2 ** bit), bit=bit)
-    return numpy.histogram(encoded, bins=2 ** bit, range=(0, 2 ** bit))[0].astype(
-        numpy.uint64
-    )
+        encoded = encode_single(encode_mulaw(wave, mu=2**bit), bit=bit)
+        return numpy.histogram(encoded, bins=2**bit, range=(0, 2**bit))[0].astype(
+            numpy.uint64
+        )
+    except:
+        print(f"error!: {path} failed")
+        raise
 
 
 def count(
@@ -43,10 +48,10 @@ def count(
     process = partial(_process, bit=bit, gaussian_noise_sigma=gaussian_noise_sigma)
     paths = [Path(p) for p in glob(input_wave_glob)]
 
-    all_histogram = numpy.zeros(2 ** bit, dtype=numpy.uint64)
+    all_histogram = numpy.zeros(2**bit, dtype=numpy.uint64)
 
     with multiprocessing.Pool(processes=num_processes) as pool:
-        it = pool.imap_unordered(process, paths, chunksize=2 ** 6)
+        it = pool.imap_unordered(process, paths, chunksize=2**6)
         for histogram in tqdm(it, desc="count", total=len(paths)):
             all_histogram += histogram
 
