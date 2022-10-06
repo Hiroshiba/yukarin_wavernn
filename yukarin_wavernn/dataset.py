@@ -93,12 +93,16 @@ class BaseWaveDataset(Dataset):
         l_scale = int(round(sr / l_rate))
 
         length = min(len(l_array) * l_scale, len(wave_data.wave))
-        assert abs(length - len(l_array) * l_scale) < l_scale * 4
-        assert abs(length - len(wave_data.wave)) < l_scale * 4
+        assert (
+            abs(length - len(l_array) * l_scale) < l_scale * 5
+        ), f"l_array error: length={length} len(l_array)*l_scale={len(l_array) * l_scale} l_scale={l_scale}"
+        assert (
+            abs(length - len(wave_data.wave)) < l_scale * 5
+        ), f"wave_data error: length={length} len(wave_data.wave)={len(wave_data.wave)} l_scale={l_scale}"
 
         assert (
             local_padding_size % l_scale == 0
-        ), f"local_padding_size: {local_padding_size}, l_scale: {l_scale}"
+        ), f"local_padding_size error: local_padding_size={local_padding_size} l_scale={l_scale}"
         l_pad = local_padding_size // l_scale
 
         l_length = length // l_scale
@@ -154,7 +158,7 @@ class BaseWaveDataset(Dataset):
             wave += numpy.random.randn(*wave.shape) * self.gaussian_noise_sigma
 
         if self.mulaw:
-            wave = encode_mulaw(wave, mu=2 ** self.bit)
+            wave = encode_mulaw(wave, mu=2**self.bit)
         encoded_coarse = encode_single(wave, bit=self.bit)
         coarse = wave.ravel().astype(numpy.float32)
 
@@ -170,7 +174,7 @@ class BaseWaveDataset(Dataset):
                 )
                 randomed_encoded_coarse[mask_offset:][
                     :mask_length
-                ] = numpy.random.randint(2 ** self.bit, size=mask_length)
+                ] = numpy.random.randint(2**self.bit, size=mask_length)
 
         d = dict(
             coarse=coarse,
