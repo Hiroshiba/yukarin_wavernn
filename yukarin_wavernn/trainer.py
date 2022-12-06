@@ -49,6 +49,13 @@ def create_trainer(
         init_weights(model, name=config.train.weight_initializer)
 
     device = torch.device("cuda")
+    if config.train.pretrained_predictor_path is not None:
+        state_dict = torch.load(
+            config.train.pretrained_predictor_path, map_location=device
+        )
+        state_dict["speaker_embedder.weight"] = predictor.speaker_embedder.weight
+
+        predictor.load_state_dict(state_dict)
     model.to(device)
 
     # dataset

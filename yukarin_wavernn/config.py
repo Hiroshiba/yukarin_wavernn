@@ -77,6 +77,7 @@ class TrainConfig:
     stop_iteration: int
     optimizer: Dict[str, Any]
     weight_initializer: Optional[str] = None
+    pretrained_predictor_path: Optional[str] = None
     num_processes: Optional[int] = None
     use_amp: bool = False
     use_multithread: bool = False
