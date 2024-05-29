@@ -1,6 +1,6 @@
 more_itertools
 numpy
-torch
+torch<2.0.0
 tqdm
 parameterized
 pyyaml
