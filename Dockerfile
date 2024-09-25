@@ -1,6 +1,8 @@
 FROM pytorch/pytorch:1.6.0-cuda10.1-cudnn7-devel
 SHELL ["/bin/bash", "-c"]
 
+RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
+
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 RUN apt-get update --fix-missing && \
     apt-get install -y wget bzip2 ca-certificates curl git sudo && \
@@ -14,7 +16,7 @@ RUN apt-get update && \
 WORKDIR /app
 
 # pypi
-RUN pip install llvmlite cython --ignore-installed
+# RUN pip install llvmlite cython --ignore-installed
 
 # cpp
 # COPY src_cython /app/src_cython
